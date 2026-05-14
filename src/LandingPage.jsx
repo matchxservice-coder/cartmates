@@ -239,7 +239,7 @@ function Rabbit({ size=200 }) {
 }
 
 /* ══════════════════════════════ TOP 10 CAROUSEL ═════════════════════════════ */
-function Top10Carousel({ t, onRegister, gotoPage, BY }) {
+function Top10Carousel({ t, onRegister, gotoPage, BY, products, productsLoading, smUser }) {
   const trackRef = useRef(null);
   const [canLeft,  setCanLeft ] = useState(false);
   const [canRight, setCanRight] = useState(true);
@@ -1284,7 +1284,7 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
         </div>
 
         {/* ── TOP 10 CAROUSEL ── */}
-        <Top10Carousel t={t} onRegister={onRegister} gotoPage={gotoPage} BY={BY}/>
+        <Top10Carousel t={t} onRegister={onRegister} gotoPage={gotoPage} BY={BY} products={products} productsLoading={productsLoading} smUser={smUser}/>
 
         {/* ── WHAT'S COMING NEXT ── */}
         <section className="sec-pad" style={{ padding:"64px 24px", background:C.bg }}>
