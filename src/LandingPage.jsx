@@ -927,6 +927,12 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
           .nav-auth{gap:6px!important;}
           .nav-auth .login-btn{padding:8px 12px!important;font-size:12.5px!important;}
           .nav-auth .by{padding:8px 12px!important;font-size:12.5px!important;}
+          /* Hide lang picker on mobile — it's in the sidebar */
+          .nav-lang{display:none!important;}
+          /* Reduce inner padding */
+          .nav-inner{padding:0 8px!important;gap:6px!important;}
+          /* Compact cart icon */
+          .nav-cart > div{width:34px!important;height:34px!important;font-size:16px!important;}
 
           /* Why section — single col */
           .why-grid{grid-template-columns:1fr!important;}
@@ -950,8 +956,8 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
       {/* ═══════════════════════════════ NAV ═══════════════════════════════ */}
       {/* Spacer so fixed nav doesn't cover content */}
       <div style={{ height: 62 }}/>
-      <nav style={{ position:"fixed", top:0, left:0, right:0, zIndex:100, background:"white", boxShadow:scrolled?"0 2px 20px rgba(7,91,176,0.1)":"0 1px 0 #E2E8F0", transition:"box-shadow 0.3s" }}>
-        <div style={{ maxWidth:1280, margin:"0 auto", padding:"0 16px", display:"flex", alignItems:"center", justifyContent:"space-between", height:62, gap:12 }}>
+      <nav style={{ position:"fixed", top:0, left:0, right:0, zIndex:100, background:"white", boxShadow:scrolled?"0 2px 20px rgba(7,91,176,0.1)":"0 1px 0 #E2E8F0", transition:"box-shadow 0.3s", overflow:"hidden" }}>
+        <div className="nav-inner" style={{ maxWidth:1280, margin:"0 auto", padding:"0 12px", display:"flex", alignItems:"center", justifyContent:"space-between", height:62, gap:8, minWidth:0 }}>
 
           {/* Logo */}
           <div onClick={()=>gotoPage("home")} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", flexShrink:0 }}>
@@ -977,7 +983,7 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
           {/* Right: lang + auth + hamburger */}
           <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }} className="nav-auth">
             {/* Lang picker */}
-            <div style={{ position:"relative" }} onClick={e=>{e.stopPropagation();setLangOpen(!langOpen);}}>
+            <div className="nav-lang" style={{ position:"relative" }} onClick={e=>{e.stopPropagation();setLangOpen(!langOpen);}}>
               <button style={{ display:"flex", alignItems:"center", gap:5, background:"transparent", border:"1.5px solid #E2E8F0", borderRadius:10, padding:"6px 10px", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
                 {LANGS.find(l=>l.key===lang)?.flag} {T[lang].lang} ▾
               </button>
@@ -994,7 +1000,7 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
             </div>
 
             {/* Cart icon */}
-            <div style={{ position:"relative", cursor:"pointer", flexShrink:0 }} onClick={()=>setCartOpen(true)}>
+            <div className="nav-cart" style={{ position:"relative", cursor:"pointer", flexShrink:0 }} onClick={()=>setCartOpen(true)}>
               <div style={{ width:38, height:38, borderRadius:10, border:`1.5px solid ${cartCount>0?C.primary:"#E2E8F0"}`, background:cartCount>0?"#EFF6FF":"white", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, transition:"all 0.2s" }}>
                 🛒
               </div>
