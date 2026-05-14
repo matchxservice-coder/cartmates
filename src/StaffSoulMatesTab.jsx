@@ -316,14 +316,13 @@ function NewParcelForm({ member, staffUserId, onCancel, onSaved }) {
     setSaving(true);
     setErr("");
     try {
-      // 1. Insert parcel (no dimensions — those go on parcel_items)
+      // 1. Insert parcel header (only tracking + desc + status — no dimensions or weight)
       const { data: parcel, error: parcelErr } = await supabase
         .from("parcels")
         .insert({
           member_id:         member.id,
           domestic_tracking: form.domestic_tracking.trim(),
           item_desc:         form.item_desc.trim(),
-          weight_kg:         form.weight_kg ? Number(form.weight_kg) : null,
           status:            "arrived",
           arrived_at:        new Date().toISOString(),
           flag_note:         form.notes.trim() || null,
@@ -332,8 +331,7 @@ function NewParcelForm({ member, staffUserId, onCancel, onSaved }) {
         .single();
       if (parcelErr) throw parcelErr;
 
-      // 1b. Insert parcel_items row with weight + dimensions per item
-      // (parcels.weight_kg is parcel-level total; parcel_items has per-item details)
+      // 1b. Insert parcel_items row — weight + dimensions live here, not on parcels
       if (form.weight_kg || form.width || form.length || form.height) {
         const { error: itemErr } = await supabase.from("parcel_items").insert({
           parcel_id:  parcel.id,
