@@ -316,7 +316,7 @@ function NewParcelForm({ member, staffUserId, onCancel, onSaved }) {
     setSaving(true);
     setErr("");
     try {
-      // 1. Insert parcel
+      // 1. Insert parcel (no dimensions — those go on parcel_items)
       const { data: parcel, error: parcelErr } = await supabase
         .from("parcels")
         .insert({
@@ -324,9 +324,6 @@ function NewParcelForm({ member, staffUserId, onCancel, onSaved }) {
           domestic_tracking: form.domestic_tracking.trim(),
           item_desc:         form.item_desc.trim(),
           weight_kg:         form.weight_kg ? Number(form.weight_kg) : null,
-          width:             form.width  ? Number(form.width)  : null,
-          length:            form.length ? Number(form.length) : null,
-          height:            form.height ? Number(form.height) : null,
           status:            "arrived",
           arrived_at:        new Date().toISOString(),
           flag_note:         form.notes.trim() || null,
@@ -334,6 +331,22 @@ function NewParcelForm({ member, staffUserId, onCancel, onSaved }) {
         .select("id")
         .single();
       if (parcelErr) throw parcelErr;
+
+      // 1b. Insert parcel_items row with weight + dimensions per item
+      // (parcels.weight_kg is parcel-level total; parcel_items has per-item details)
+      if (form.weight_kg || form.width || form.length || form.height) {
+        const { error: itemErr } = await supabase.from("parcel_items").insert({
+          parcel_id:  parcel.id,
+          line_no:    1,
+          item_desc:  form.item_desc.trim(),
+          qty:        1,
+          weight:     form.weight_kg ? Number(form.weight_kg) : null,
+          width:      form.width  ? Number(form.width)  : null,
+          length:     form.length ? Number(form.length) : null,
+          height:     form.height ? Number(form.height) : null,
+        });
+        if (itemErr) console.warn("parcel_items insert warning:", itemErr);
+      }
 
       // 2. Upload photos to Supabase Storage + insert into parcel_photos
       if (photoFiles.length > 0) {
