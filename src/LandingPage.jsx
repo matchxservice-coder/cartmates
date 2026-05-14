@@ -923,16 +923,7 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
           .cta-btns{flex-direction:column!important;align-items:center!important;}
           .cta-btns button{width:100%;max-width:280px;}
 
-          /* Nav — keep Login + Get Started visible on all sizes */
-          .nav-auth{gap:6px!important;}
-          .nav-auth .login-btn{padding:8px 12px!important;font-size:12.5px!important;}
-          .nav-auth .by{padding:8px 12px!important;font-size:12.5px!important;}
-          /* Hide lang picker on mobile — it's in the sidebar */
-          .nav-lang{display:none!important;}
-          /* Reduce inner padding */
-          .nav-inner{padding:0 8px!important;gap:6px!important;}
-          /* Compact cart icon */
-          .nav-cart > div{width:34px!important;height:34px!important;font-size:16px!important;}
+          /* Nav rules now in base CSS — fluid for any phone size */
 
           /* Why section — single col */
           .why-grid{grid-template-columns:1fr!important;}
@@ -943,13 +934,45 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
           .hero-h1{font-size:26px!important;}
           .mkt-grid{grid-template-columns:1fr!important;}
           .svc-grid{grid-template-columns:1fr!important;}
-          /* Make nav buttons compact so both fit */
+        }
+
+        /* ═══════════ FLUID NAVBAR — works on ANY phone width ═══════════ */
+        /* Hide language picker on tablet+mobile (≤900px) — lang is in sidebar */
+        @media(max-width:900px){
+          .nav-lang{display:none!important;}
+        }
+
+        /* Compact navbar on phones (≤640px) */
+        @media(max-width:640px){
+          .nav-inner{padding:0 6px!important;gap:4px!important;}
+
+          /* Compact cart icon */
+          .nav-cart > div{width:32px!important;height:32px!important;font-size:15px!important;}
+
+          /* Auth buttons: shrinkable, tighter, smaller text */
           .nav-auth{gap:4px!important;}
-          .nav-auth .login-btn{padding:7px 9px!important;font-size:11.5px!important;}
-          .nav-auth .by{padding:7px 9px!important;font-size:11.5px!important;}
-          .nav-logo-text{display:none!important;}   /* hide "CartMates" word, keep bunny icon */
+          .nav-auth .login-btn{padding:7px 10px!important;font-size:11.5px!important;white-space:nowrap;}
+          .nav-auth .by{padding:7px 10px!important;font-size:11.5px!important;white-space:nowrap;}
+
+          /* Logo: bunny only by default, brand text appears only if room */
+          .nav-logo-text{font-size:15px!important;}
+        }
+
+        /* Even tighter ≤ 420px (most common phones) */
+        @media(max-width:420px){
+          .nav-logo-text{display:none!important;}      /* hide CARTMATES word */
           .nav-cta-long{display:none!important;}
           .nav-cta-short{display:inline!important;}
+          .nav-auth .login-btn{padding:6px 8px!important;font-size:11px!important;}
+          .nav-auth .by{padding:6px 8px!important;font-size:11px!important;}
+        }
+
+        /* Extreme small ≤ 340px — fallback for old/edge devices */
+        @media(max-width:340px){
+          .nav-inner{padding:0 4px!important;gap:3px!important;}
+          .nav-cart > div{width:30px!important;height:30px!important;}
+          .nav-auth .login-btn{padding:6px 7px!important;font-size:10.5px!important;}
+          .nav-auth .by{padding:6px 7px!important;font-size:10.5px!important;}
         }
       `}</style>
 
@@ -960,9 +983,9 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
         <div className="nav-inner" style={{ maxWidth:1280, margin:"0 auto", padding:"0 12px", display:"flex", alignItems:"center", justifyContent:"space-between", height:62, gap:8, minWidth:0 }}>
 
           {/* Logo */}
-          <div onClick={()=>gotoPage("home")} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", flexShrink:0 }}>
-            <div style={{ width:34, height:34, borderRadius:9, background:C.primary, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>🐰</div>
-            <span className="nav-logo-text" style={{ fontFamily:"'Baloo 2',sans-serif", fontSize:19, fontWeight:900, color:C.primary, letterSpacing:"-0.02em" }}>CARTMATES</span>
+          <div className="nav-logo" onClick={()=>gotoPage("home")} style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer", flexShrink:1, minWidth:0, overflow:"hidden" }}>
+            <div style={{ width:32, height:32, borderRadius:9, background:C.primary, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>🐰</div>
+            <span className="nav-logo-text" style={{ fontFamily:"'Baloo 2',sans-serif", fontSize:19, fontWeight:900, color:C.primary, letterSpacing:"-0.02em", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>CARTMATES</span>
           </div>
 
           {/* Desktop links */}
