@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { supabase } from "./supabaseClient";
 import SoulMatesPanel from "./SoulMatesPanel";
 import CheckoutPage from "./CheckoutPage";
 import OrderConfirmation from "./OrderConfirmation";
@@ -143,18 +144,8 @@ const T = {
 };
 
 /* ══════════════════════════════ MOCK DATA ════════════════════════════════════ */
-const TOP10 = [
-  {id:1,name:"GMMTV Photobook Vol.3",artist:"GMMTV",price:890,sold:412,badge:"🥇",tag:"BL/GL Official",img:"📚"},
-  {id:2,name:"BillKin Acoustic Tote Bag",artist:"BillKin",price:450,sold:387,badge:"🥈",tag:"Artist Brand",img:"👜"},
-  {id:3,name:"OffGun Summer Merch Set",artist:"OffGun",price:1250,sold:356,badge:"🥉",tag:"BL/GL Official",img:"🎁"},
-  {id:4,name:"MILLI Limited Hoodie",artist:"MILLI",price:790,sold:298,badge:"#4",tag:"Artist Brand",img:"👕"},
-  {id:5,name:"Thai Milk Tea Set x12",artist:"Chatramue",price:340,sold:276,badge:"#5",tag:"Food & Snacks",img:"🧋"},
-  {id:6,name:"Nanon Signature Pendant",artist:"Nanon",price:590,sold:251,badge:"#6",tag:"Artist Brand",img:"📿"},
-  {id:7,name:"Bad Buddy Blanket Official",artist:"GMMTV",price:680,sold:234,badge:"#7",tag:"BL/GL Official",img:"🧣"},
-  {id:8,name:"Snackbox Thai Bundle",artist:"Various",price:420,sold:218,badge:"#8",tag:"Food & Snacks",img:"🍿"},
-  {id:9,name:"Jeff Satur Concert Lightstick",artist:"Jeff Satur",price:950,sold:197,badge:"#9",tag:"Artist Brand",img:"🪄"},
-  {id:10,name:"Pond Phuwin Fan Set",artist:"Pond Phuwin",price:520,sold:183,badge:"#10",tag:"BL/GL Official",img:"💌"},
-];
+// TOP10 and MARKET_PRODS removed in v8 — products now fetched from
+// marketplace_products table at runtime (see useEffect inside component).
 
 const NEWS = [
   {id:1,type:"artist",tag:"Artist News",title:"BillKin & PP Krit Announce New BL Drama",date:"Apr 28, 2025",desc:"GMMTV confirms filming starts June 2025. Pre-order merch window opens next week. CartMates will have exclusive early access for Ultimate members.",img:"🎬",hot:true},
@@ -163,17 +154,6 @@ const NEWS = [
   {id:4,type:"event",tag:"Events",title:"Jeff Satur World Tour — Asian Leg Dates",date:"Apr 25, 2025",desc:"Official dates confirmed for Bangkok, Tokyo, Seoul, and Singapore. CartMates Concert Tour Package coming soon — hotel + ticket bundle.",img:"🎤",hot:false},
   {id:5,type:"shipping",tag:"Shipping Updates",title:"New Carrier Partner: DHL Express Thailand",date:"Apr 24, 2025",desc:"CartMates now offers DHL Express for priority door-to-door delivery to 50+ countries with real-time tracking.",img:"✈️",hot:false},
   {id:6,type:"merch",tag:"New Merch",title:"MILLI 'Water' Album Physical CD — Pre-order",date:"Apr 23, 2025",desc:"Official CD with photocard and exclusive sticker set. Pre-orders ship May 15. CartMates warehouse ready for consolidation.",img:"💿",hot:false},
-];
-
-const MARKET_PRODS = [
-  {id:1,name:"GMMTV Photobook Vol.3",artist:"GMMTV",price:890,tag:"BL/GL Official",stock:"in",img:"📚",rating:4.9},
-  {id:2,name:"BillKin Tote Bag",artist:"BillKin",price:450,tag:"Artist Brand",stock:"limited",img:"👜",rating:4.8},
-  {id:3,name:"OffGun Summer Set",artist:"OffGun",price:1250,tag:"BL/GL Official",stock:"limited",img:"🎁",rating:5.0},
-  {id:4,name:"Thai Milk Tea x12",artist:"Chatramue",price:340,tag:"Food & Snacks",stock:"in",img:"🧋",rating:4.7},
-  {id:5,name:"Jeff Satur Lightstick",artist:"Jeff Satur",price:950,tag:"Artist Brand",stock:"in",img:"🪄",rating:4.9},
-  {id:6,name:"MILLI Limited Hoodie",artist:"MILLI",price:790,tag:"Artist Brand",stock:"limited",img:"👕",rating:4.6},
-  {id:7,name:"Bad Buddy Blanket",artist:"GMMTV",price:680,tag:"BL/GL Official",stock:"in",img:"🧣",rating:4.8},
-  {id:8,name:"Nanon Pendant Silver",artist:"Nanon",price:590,tag:"Artist Brand",stock:"in",img:"📿",rating:4.7},
 ];
 
 const PACKAGES = [
@@ -323,8 +303,8 @@ function Top10Carousel({ t, onRegister, gotoPage, BY }) {
                      scrollbarWidth:"none", msOverflowStyle:"none" }}>
             <style>{`.top10-track::-webkit-scrollbar{display:none}`}</style>
 
-            {TOP10.map((p,i)=>(
-              <div key={p.id} onClick={onRegister}
+            {products.slice(0,10).map((p,i)=>(
+              <div key={p.id} onClick={()=>!smUser && onRegister()}
                 style={{ flexShrink:0, width:CARD_W, background:"white", borderRadius:16,
                          border:"1.5px solid #E2E8F0", overflow:"hidden",
                          boxShadow:"0 2px 10px rgba(0,0,0,0.06)", cursor:"pointer",
@@ -333,11 +313,13 @@ function Top10Carousel({ t, onRegister, gotoPage, BY }) {
                 onMouseLeave={e=>{ e.currentTarget.style.transform=""; e.currentTarget.style.boxShadow="0 2px 10px rgba(0,0,0,0.06)"; }}
               >
                 {/* Image area */}
-                <div style={{ background:`linear-gradient(135deg,${C.bg},#E8F4FD)`, height:130, display:"flex", alignItems:"center", justifyContent:"center", fontSize:46, position:"relative" }}>
-                  {p.img}
+                <div style={{ background:`linear-gradient(135deg,${C.bg},#E8F4FD)`, height:130, display:"flex", alignItems:"center", justifyContent:"center", fontSize:46, position:"relative", overflow:"hidden" }}>
+                  {p.imgIsUrl
+                    ? <img src={p.img} alt={p.name} style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
+                    : p.img}
                   {/* Rank badge */}
                   <span style={{ position:"absolute", top:8, left:8, ...rankStyle(i), fontSize:i<3?11:10, fontWeight:900, padding:"3px 9px", borderRadius:8, lineHeight:1.4 }}>
-                    {i===0?"🏆 #1": i===1?"🥈 #2": i===2?"🥉 #3":`#${p.rank}`}
+                    {i===0?"🏆 #1": i===1?"🥈 #2": i===2?"🥉 #3":`#${i+1}`}
                   </span>
                 </div>
                 {/* Card body */}
@@ -348,12 +330,17 @@ function Top10Carousel({ t, onRegister, gotoPage, BY }) {
                     {p.name}
                   </div>
                   <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                    <span style={{ fontWeight:900, fontSize:15, color:C.primary }}>฿{p.price}</span>
-                    <span style={{ fontSize:11, color:C.muted, fontWeight:600 }}>{p.sold} {t.top10.soldLabel}</span>
+                    <span style={{ fontWeight:900, fontSize:15, color:C.primary }}>฿{p.price.toLocaleString()}</span>
+                    <span style={{ fontSize:11, color:C.muted, fontWeight:600 }}>Stock: {p.stock_qty}</span>
                   </div>
                 </div>
               </div>
             ))}
+            {products.length === 0 && !productsLoading && (
+              <div style={{ width:"100%", padding:"40px 20px", textAlign:"center", color:C.muted, fontSize:13 }}>
+                🐰 No products yet — check back soon!
+              </div>
+            )}
           </div>
         </div>
 
@@ -577,9 +564,67 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
   const [clubCat, setClubCat]   = useState(0);
   const [search, setSearch]     = useState("");
 
+  // ── Live products from Supabase ──────────────────────────────────────────
+  // Replaces previous MARKET_PRODS / TOP10 mock arrays. id is UUID, not int.
+  const [products, setProducts]         = useState([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchProducts = async () => {
+      const { data, error } = await supabase
+        .from("marketplace_products")
+        .select("*")
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: false });
+
+      if (!mounted) return;
+      if (error) {
+        console.warn("Failed to fetch marketplace products:", error);
+        setProducts([]);
+      } else {
+        // Normalize to shape used by existing UI (name, price, img, tag, etc.)
+        setProducts((data || []).map(p => ({
+          id:     p.id,            // UUID (real)
+          name:   p.name,
+          price:  Number(p.price_thb),
+          img:    p.images?.[0] || "📦",   // first image URL or emoji fallback
+          imgIsUrl: !!p.images?.[0],
+          tag:    p.tag || p.category || "",
+          stock:  p.stock_qty > 0 ? (p.stock_qty < 5 ? "limited" : "in") : "out",
+          stock_qty: p.stock_qty,
+          weight_kg: p.weight_kg,
+          rating: 4.8,             // fixed for now (no review system yet)
+          sku:    p.sku,
+        })));
+      }
+      setProductsLoading(false);
+    };
+
+    fetchProducts();
+
+    // Realtime: refresh when manager edits stock or adds items
+    const ch = supabase.channel("landing-marketplace-products")
+      .on("postgres_changes", { event: "*", schema: "public", table: "marketplace_products" }, fetchProducts)
+      .subscribe();
+
+    return () => { mounted = false; supabase.removeChannel(ch); };
+  }, []);
+
   // ── Cart state (persisted in localStorage for guests) ──────────────────────
+  // Filter out legacy cart items where id is an integer (from old mock data) —
+  // those will fail Postgres UUID validation at checkout.
   const [cart, setCart] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("cm_cart") || "[]"); } catch { return []; }
+    try {
+      const raw = JSON.parse(localStorage.getItem("cm_cart") || "[]");
+      const valid = raw.filter(i => typeof i.id === "string" && i.id.length > 10);
+      if (valid.length !== raw.length) {
+        localStorage.setItem("cm_cart", JSON.stringify(valid));
+      }
+      return valid;
+    } catch { return []; }
   });
   const [cartOpen, setCartOpen]         = useState(false);
   const [loginGateOpen, setLoginGateOpen] = useState(false);
@@ -592,7 +637,16 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
       const existing = prev.find(i => i.id === prod.id);
       const next = existing
         ? prev.map(i => i.id === prod.id ? { ...i, qty: i.qty + 1 } : i)
-        : [...prev, { id: prod.id, name: prod.name, price: prod.price, img: prod.img, tag: prod.tag, qty: 1 }];
+        : [...prev, {
+            id:        prod.id,
+            name:      prod.name,
+            price:     prod.price,
+            img:       prod.img,
+            imgIsUrl:  prod.imgIsUrl,
+            tag:       prod.tag,
+            weight_kg: prod.weight_kg,
+            qty:       1,
+          }];
       localStorage.setItem("cm_cart", JSON.stringify(next));
       return next;
     });
@@ -679,10 +733,10 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
     {key:"ko",label:"한국어",flag:"🇰🇷"},
   ];
 
-  const filteredProds = MARKET_PRODS.filter(p => {
+  const filteredProds = products.filter(p => {
     const cats = t.market.categories;
     const cm = mktCat === 0 || p.tag === cats[mktCat];
-    const sm = !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.artist.toLowerCase().includes(search.toLowerCase());
+    const sm = !search || (p.name || "").toLowerCase().includes(search.toLowerCase());
     return cm && sm;
   });
   const filteredNews = NEWS.filter(n => clubCat === 0 || n.tag === t.club.categories[clubCat]);
@@ -869,9 +923,10 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
           .cta-btns{flex-direction:column!important;align-items:center!important;}
           .cta-btns button{width:100%;max-width:280px;}
 
-          /* Nav */
+          /* Nav — keep Login + Get Started visible on all sizes */
           .nav-auth{gap:6px!important;}
-          .nav-auth .login-btn{display:none!important;}
+          .nav-auth .login-btn{padding:8px 12px!important;font-size:12.5px!important;}
+          .nav-auth .by{padding:8px 12px!important;font-size:12.5px!important;}
 
           /* Why section — single col */
           .why-grid{grid-template-columns:1fr!important;}
@@ -882,6 +937,13 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
           .hero-h1{font-size:26px!important;}
           .mkt-grid{grid-template-columns:1fr!important;}
           .svc-grid{grid-template-columns:1fr!important;}
+          /* Make nav buttons compact so both fit */
+          .nav-auth{gap:4px!important;}
+          .nav-auth .login-btn{padding:7px 9px!important;font-size:11.5px!important;}
+          .nav-auth .by{padding:7px 9px!important;font-size:11.5px!important;}
+          .nav-logo-text{display:none!important;}   /* hide "CartMates" word, keep bunny icon */
+          .nav-cta-long{display:none!important;}
+          .nav-cta-short{display:inline!important;}
         }
       `}</style>
 
@@ -894,7 +956,7 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
           {/* Logo */}
           <div onClick={()=>gotoPage("home")} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", flexShrink:0 }}>
             <div style={{ width:34, height:34, borderRadius:9, background:C.primary, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>🐰</div>
-            <span style={{ fontFamily:"'Baloo 2',sans-serif", fontSize:19, fontWeight:900, color:C.primary, letterSpacing:"-0.02em" }}>CARTMATES</span>
+            <span className="nav-logo-text" style={{ fontFamily:"'Baloo 2',sans-serif", fontSize:19, fontWeight:900, color:C.primary, letterSpacing:"-0.02em" }}>CARTMATES</span>
           </div>
 
           {/* Desktop links */}
@@ -954,7 +1016,10 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
             ) : (
               <>
                 <button className="bo login-btn" style={BO} onClick={onLogin}>{t.nav.login}</button>
-                <button className="by" style={{...BY,padding:"10px 16px",fontSize:14}} onClick={onRegister}>{t.nav.getStarted} 🐰</button>
+                <button className="by" style={{...BY,padding:"10px 16px",fontSize:14}} onClick={onRegister}>
+                  <span className="nav-cta-long">{t.nav.getStarted} 🐰</span>
+                  <span className="nav-cta-short" style={{display:"none"}}>Join 🐰</span>
+                </button>
               </>
             )}
 
@@ -1059,20 +1124,32 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
             <div className="mkt-grid" style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))", gap:16 }}>
               {filteredProds.map(p=>(
                 <div key={p.id} className="prod-card" style={{ background:"white", borderRadius:16, border:"1.5px solid #E2E8F0", overflow:"hidden", boxShadow:"0 2px 8px rgba(0,0,0,0.05)" }}>
-                  <div style={{ background:`linear-gradient(135deg,${C.bg},#E8F4FD)`, height:140, display:"flex", alignItems:"center", justifyContent:"center", fontSize:52, position:"relative" }}>
-                    {p.img}
-                    <span style={{ position:"absolute", top:8, right:8, background:p.stock==="limited"?"#FEF3C7":"#DCFCE7", color:p.stock==="limited"?"#D97706":"#16A34A", fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:7 }}>
-                      {p.stock==="limited"?t.market.limitedStock:t.market.inStock}
-                    </span>
+                  <div style={{ background:`linear-gradient(135deg,${C.bg},#E8F4FD)`, height:140, display:"flex", alignItems:"center", justifyContent:"center", fontSize:52, position:"relative", overflow:"hidden" }}>
+                    {p.imgIsUrl
+                      ? <img src={p.img} alt={p.name} style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
+                      : p.img}
+                    {p.stock !== "out" && (
+                      <span style={{ position:"absolute", top:8, right:8, background:p.stock==="limited"?"#FEF3C7":"#DCFCE7", color:p.stock==="limited"?"#D97706":"#16A34A", fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:7 }}>
+                        {p.stock==="limited"?t.market.limitedStock:t.market.inStock}
+                      </span>
+                    )}
+                    {p.stock === "out" && (
+                      <span style={{ position:"absolute", top:8, right:8, background:"#FEE2E2", color:"#DC2626", fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:7 }}>
+                        Sold out
+                      </span>
+                    )}
                   </div>
                   <div style={{ padding:"14px" }}>
                     <div style={{ fontSize:11, color:C.action, fontWeight:800, marginBottom:3 }}>{p.tag}</div>
-                    <div style={{ fontSize:13.5, fontWeight:800, color:C.text, marginBottom:4, lineHeight:1.3 }}>{p.name}</div>
-                    <div style={{ fontSize:12, color:C.muted, marginBottom:10 }}>{p.artist} · ⭐{p.rating}</div>
+                    <div style={{ fontSize:13.5, fontWeight:800, color:C.text, marginBottom:4, lineHeight:1.3, minHeight:36, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical" }}>{p.name}</div>
+                    <div style={{ fontSize:11, color:C.muted, marginBottom:10, fontFamily:"monospace" }}>{p.sku}</div>
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
-                      <span style={{ fontWeight:900, fontSize:16, color:C.primary }}>฿{p.price}</span>
-                      <button className="by" style={{ background: addedId===p.id ? "#22c55e" : C.yellow, color: addedId===p.id ? "white" : C.text, border:"none", borderRadius:9, padding:"7px 12px", fontSize:12, fontWeight:800, cursor:"pointer", fontFamily:"inherit", flexShrink:0, transition:"background 0.3s" }} onClick={()=>addToCart(p)}>
-                        {addedId===p.id ? "✓ Added!" : t.market.addCart}
+                      <span style={{ fontWeight:900, fontSize:16, color:C.primary }}>฿{p.price.toLocaleString()}</span>
+                      <button className="by"
+                        disabled={p.stock === "out"}
+                        style={{ background: p.stock === "out" ? "#e5e7eb" : (addedId===p.id ? "#22c55e" : C.yellow), color: p.stock === "out" ? "#94a3b8" : (addedId===p.id ? "white" : C.text), border:"none", borderRadius:9, padding:"7px 12px", fontSize:12, fontWeight:800, cursor: p.stock === "out" ? "not-allowed" : "pointer", fontFamily:"inherit", flexShrink:0, transition:"background 0.3s" }}
+                        onClick={()=> p.stock !== "out" && addToCart(p)}>
+                        {p.stock === "out" ? "—" : addedId===p.id ? "✓ Added!" : t.market.addCart}
                       </button>
                     </div>
                   </div>
