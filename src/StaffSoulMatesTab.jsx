@@ -283,10 +283,30 @@ function NewParcelForm({ member, staffUserId, onCancel, onSaved }) {
     domestic_tracking: "",
     item_desc:         "",
     weight_kg:         "",
+    width:             "",
+    length:            "",
+    height:            "",
     notes:             "",
   });
+  const [photoFiles, setPhotoFiles] = useState([]);   // File[]
+  const [photoPreviews, setPhotoPreviews] = useState([]); // base64[]
   const [saving, setSaving] = useState(false);
   const [err, setErr]       = useState("");
+
+  const handlePhotos = (files) => {
+    const arr = Array.from(files || []);
+    setPhotoFiles(prev => [...prev, ...arr]);
+    arr.forEach(f => {
+      const reader = new FileReader();
+      reader.onload = () => setPhotoPreviews(prev => [...prev, reader.result]);
+      reader.readAsDataURL(f);
+    });
+  };
+
+  const removePhoto = (i) => {
+    setPhotoFiles(prev => prev.filter((_, idx) => idx !== i));
+    setPhotoPreviews(prev => prev.filter((_, idx) => idx !== i));
+  };
 
   const handleSave = async () => {
     if (!form.domestic_tracking.trim() || !form.item_desc.trim()) {
@@ -296,17 +316,52 @@ function NewParcelForm({ member, staffUserId, onCancel, onSaved }) {
     setSaving(true);
     setErr("");
     try {
-      const { error } = await supabase.from("parcels").insert({
-        member_id:         member.id,
-        domestic_tracking: form.domestic_tracking.trim(),
-        item_desc:         form.item_desc.trim(),
-        weight_kg:         form.weight_kg ? Number(form.weight_kg) : null,
-        status:            "arrived",
-        arrived_at:        new Date().toISOString(),
-        received_by:       staffUserId,
-        flag_note:         form.notes.trim() || null,
-      });
-      if (error) throw error;
+      // 1. Insert parcel
+      const { data: parcel, error: parcelErr } = await supabase
+        .from("parcels")
+        .insert({
+          member_id:         member.id,
+          domestic_tracking: form.domestic_tracking.trim(),
+          item_desc:         form.item_desc.trim(),
+          weight_kg:         form.weight_kg ? Number(form.weight_kg) : null,
+          width:             form.width  ? Number(form.width)  : null,
+          length:            form.length ? Number(form.length) : null,
+          height:            form.height ? Number(form.height) : null,
+          status:            "arrived",
+          arrived_at:        new Date().toISOString(),
+          flag_note:         form.notes.trim() || null,
+        })
+        .select("id")
+        .single();
+      if (parcelErr) throw parcelErr;
+
+      // 2. Upload photos to Supabase Storage + insert into parcel_photos
+      if (photoFiles.length > 0) {
+        const uploadedUrls = [];
+        for (const file of photoFiles) {
+          const ext = file.name.split(".").pop();
+          const path = `parcels/${parcel.id}/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+          const { error: upErr } = await supabase.storage
+            .from("parcel-photos")
+            .upload(path, file);
+          if (upErr) throw new Error("Photo upload failed: " + upErr.message);
+          const { data: { publicUrl } } = supabase.storage
+            .from("parcel-photos")
+            .getPublicUrl(path);
+          uploadedUrls.push(publicUrl);
+        }
+
+        // Insert rows into parcel_photos
+        const rows = uploadedUrls.map(url => ({
+          parcel_id: parcel.id,
+          url,
+          type:      "inbound",
+          uploaded_by: staffUserId,
+        }));
+        const { error: photoErr } = await supabase.from("parcel_photos").insert(rows);
+        if (photoErr) console.warn("parcel_photos insert warning:", photoErr);
+      }
+
       onSaved?.();
     } catch (e) {
       setErr(e.message);
@@ -314,6 +369,12 @@ function NewParcelForm({ member, staffUserId, onCancel, onSaved }) {
       setSaving(false);
     }
   };
+
+  // Live billable weight preview
+  const w = Number(form.width), l = Number(form.length), h = Number(form.height);
+  const volumetric = (w && l && h) ? (w * l * h) / 5000 : 0;
+  const actual = Number(form.weight_kg) || 0;
+  const billable = Math.max(actual, volumetric);
 
   return (
     <div style={{ background:"white", border:`2px solid ${C.primary}`, borderRadius:14, padding:18, marginBottom:14 }}>
@@ -328,10 +389,60 @@ function NewParcelForm({ member, staffUserId, onCancel, onSaved }) {
           <label style={lbl}>Item Description *</label>
           <input style={inp()} value={form.item_desc} onChange={e=>setForm(f=>({...f,item_desc:e.target.value}))} placeholder="e.g. GMMTV photobook"/>
         </div>
-        <div>
-          <label style={lbl}>Weight (kg)</label>
-          <input type="number" step="0.001" style={inp()} value={form.weight_kg} onChange={e=>setForm(f=>({...f,weight_kg:e.target.value}))} placeholder="0.5"/>
+
+        {/* Weight + Dimensions */}
+        <div style={{ background:"#f8fafc", border:`1px solid ${C.border}`, borderRadius:10, padding:14 }}>
+          <div style={{ fontSize:12, fontWeight:800, color:C.primary, marginBottom:10 }}>⚖️ Weight & Dimensions</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8 }}>
+            <div>
+              <label style={lbl}>Weight (kg)</label>
+              <input type="number" step="0.001" style={inp()} value={form.weight_kg} onChange={e=>setForm(f=>({...f,weight_kg:e.target.value}))} placeholder="0.5"/>
+            </div>
+            <div>
+              <label style={lbl}>W (cm)</label>
+              <input type="number" step="0.1" style={inp()} value={form.width} onChange={e=>setForm(f=>({...f,width:e.target.value}))} placeholder="15"/>
+            </div>
+            <div>
+              <label style={lbl}>L (cm)</label>
+              <input type="number" step="0.1" style={inp()} value={form.length} onChange={e=>setForm(f=>({...f,length:e.target.value}))} placeholder="22"/>
+            </div>
+            <div>
+              <label style={lbl}>H (cm)</label>
+              <input type="number" step="0.1" style={inp()} value={form.height} onChange={e=>setForm(f=>({...f,height:e.target.value}))} placeholder="5"/>
+            </div>
+          </div>
+          {(actual > 0 || volumetric > 0) && (
+            <div style={{ marginTop:10, padding:"8px 10px", background:"white", borderRadius:8, fontSize:11, display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:6 }}>
+              <span style={{ color:C.muted }}>Actual: <strong style={{ color:C.text }}>{actual.toFixed(2)} kg</strong></span>
+              <span style={{ color:C.muted }}>Volumetric: <strong style={{ color:C.text }}>{volumetric.toFixed(2)} kg</strong></span>
+              <span style={{ fontWeight:700, color:C.primary }}>Billable: {billable.toFixed(2)} kg</span>
+            </div>
+          )}
         </div>
+
+        {/* Photos */}
+        <div>
+          <label style={lbl}>📸 Photos (optional)</label>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            {photoPreviews.map((src, i) => (
+              <div key={i} style={{ position:"relative", width:80, height:80, borderRadius:8, overflow:"hidden", border:`1.5px solid ${C.border}` }}>
+                <img src={src} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
+                <button onClick={()=>removePhoto(i)} style={{ position:"absolute", top:2, right:2, width:20, height:20, borderRadius:"50%", background:"rgba(0,0,0,0.7)", color:"white", border:"none", fontSize:11, cursor:"pointer" }}>✕</button>
+              </div>
+            ))}
+            <label style={{ width:80, height:80, borderRadius:8, border:`2px dashed ${C.border}`, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color:C.muted, fontSize:11, fontWeight:700, flexDirection:"column", gap:4, background:"#f8fafc" }}>
+              <span style={{ fontSize:20 }}>📷</span>
+              <span>Add</span>
+              <input type="file" accept="image/*" multiple onChange={e=>handlePhotos(e.target.files)} style={{ display:"none" }}/>
+            </label>
+            <label style={{ width:80, height:80, borderRadius:8, border:`2px dashed ${C.border}`, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", color:C.muted, fontSize:11, fontWeight:700, flexDirection:"column", gap:4, background:"#f8fafc" }}>
+              <span style={{ fontSize:20 }}>📸</span>
+              <span>Camera</span>
+              <input type="file" accept="image/*" capture="environment" onChange={e=>handlePhotos(e.target.files)} style={{ display:"none" }}/>
+            </label>
+          </div>
+        </div>
+
         <div>
           <label style={lbl}>Notes / Flag (optional)</label>
           <textarea style={{ ...inp(), minHeight:60, resize:"vertical" }} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Any damage, special handling required?"/>
