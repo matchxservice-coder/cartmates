@@ -46,7 +46,30 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
 
+    // Detect email verification redirect (?verified=1) from Supabase
+    const isVerifyReturn = window.location.search.includes("verified=1");
+    if (isVerifyReturn) {
+      setStatusMessage({
+        icon:  "✅",
+        title: "Email verified!",
+        body:  "Your email is confirmed. You can now log in with your username and password to access your Soul Mates account.",
+      });
+      // Clean up the URL so refreshing won't re-trigger the modal
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
     const bootstrap = async () => {
+      // If user just verified email, Supabase may have auto-signed them in.
+      // Force sign-out so they go through manual login (as per design).
+      if (isVerifyReturn) {
+        await supabase.auth.signOut();
+        if (mounted) {
+          setBooting(false);
+          setPage("login");
+        }
+        return;
+      }
+
       const session = await getActiveSession();
       if (session?.user) {
         await hydrateUserFromSession(session.user, mounted ? setUser : null);
