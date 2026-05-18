@@ -48,21 +48,105 @@ export default function App() {
 
     // Detect email verification redirect (?verified=1) from Supabase
     const isVerifyReturn = window.location.search.includes("verified=1");
-    if (isVerifyReturn) {
-      setStatusMessage({
-        icon:  "✅",
-        title: "Email verified!",
-        body:  "Your email is confirmed. You can now log in with your username and password to access your Soul Mates account.",
-      });
-      // Clean up the URL so refreshing won't re-trigger the modal
-      window.history.replaceState({}, "", window.location.pathname);
-    }
+    // (statusMessage will be set inside bootstrap based on success/failure of profile creation)
 
     const bootstrap = async () => {
       // If user just verified email, Supabase may have auto-signed them in.
-      // Force sign-out so they go through manual login (as per design).
+      // We need to: (1) create their profile using pending form data, then
+      // (2) sign them out so they go through manual login.
       if (isVerifyReturn) {
-        await supabase.auth.signOut();
+        console.log("🔐 Verify return detected — processing pending registration");
+        try {
+          // Wait briefly for Supabase session to settle
+          await new Promise(r => setTimeout(r, 300));
+
+          // Get current session (Supabase should have auto-signed in the user)
+          const { data: { session } } = await supabase.auth.getSession();
+
+          if (session?.user) {
+            console.log("✅ Session active for verified user:", session.user.id);
+
+            // Check if profile already exists (avoid duplicate RPC)
+            const { data: existingProfile } = await supabase
+              .from("profiles")
+              .select("id")
+              .eq("id", session.user.id)
+              .maybeSingle();
+
+            if (existingProfile) {
+              console.log("ℹ️ Profile already exists — skipping RPC");
+            } else {
+              // Retrieve pending registration data from localStorage
+              const pendingStr = localStorage.getItem("cm_pending_register");
+              if (pendingStr) {
+                try {
+                  const pending = JSON.parse(pendingStr);
+                  console.log("📦 Found pending register data — calling fn_register_customer");
+
+                  const { error: regError } = await supabase.rpc("fn_register_customer", {
+                    p_user_id:        session.user.id,
+                    p_username:       pending.username,
+                    p_first_name:     pending.first_name,
+                    p_last_name:      pending.last_name,
+                    p_email:          pending.email,
+                    p_phone:          pending.phone,
+                    p_tax_id:         pending.tax_id,
+                    p_country:        pending.country,
+                    p_address:        pending.address,
+                    p_city:           pending.city,
+                    p_state_province: pending.state_province,
+                    p_postcode:       pending.postcode,
+                    p_channel:        pending.channel,
+                    p_channel_user:   pending.channel_user,
+                    p_package:        pending.package,
+                    p_interests:      pending.interests,
+                  });
+
+                  if (regError) {
+                    console.error("❌ fn_register_customer failed on verify:", regError);
+                    setStatusMessage({
+                      icon:  "⚠️",
+                      title: "Profile setup incomplete",
+                      body:  `Your email is verified but profile creation failed: ${regError.message}. Please contact support.`,
+                    });
+                  } else {
+                    console.log("✅ Profile created successfully");
+                    localStorage.removeItem("cm_pending_register");
+                    setStatusMessage({
+                      icon:  "✅",
+                      title: "Email verified!",
+                      body:  "Your account is ready. Please log in with your username and password to access your Soul Mates account.",
+                    });
+                  }
+                } catch (e) {
+                  console.error("❌ Failed to parse pending data:", e);
+                }
+              } else {
+                console.warn("⚠️ No pending register data found in localStorage");
+                setStatusMessage({
+                  icon:  "✅",
+                  title: "Email verified!",
+                  body:  "Your email is confirmed. Please log in with your username and password.",
+                });
+              }
+            }
+          } else {
+            console.warn("⚠️ No session after verify — falling back to manual login");
+            setStatusMessage({
+              icon:  "✅",
+              title: "Email verified!",
+              body:  "Your email is confirmed. You can now log in with your username and password.",
+            });
+          }
+
+          // Always sign out after verify processing — user must log in manually
+          await supabase.auth.signOut();
+        } catch (e) {
+          console.error("❌ Verify-return processing error:", e);
+        }
+
+        // Clean URL + go to login
+        window.history.replaceState({}, "", window.location.pathname);
         if (mounted) {
           setBooting(false);
           setPage("login");
