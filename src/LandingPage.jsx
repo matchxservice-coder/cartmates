@@ -701,12 +701,7 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
     return () => window.removeEventListener("scroll", h);
   }, []);
 
-  // close dropdowns on outside click
-  useEffect(() => {
-    const h = () => { setLangOpen(false); };
-    document.addEventListener("click", h);
-    return () => document.removeEventListener("click", h);
-  }, []);
+  // (lang picker is now a modal with its own backdrop click — no global handler needed)
 
   // lock body scroll when mobile menu open
   useEffect(() => {
@@ -937,14 +932,14 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
         }
 
         /* ═══════════ FLUID NAVBAR — works on ANY phone width ═══════════ */
-        /* Hide language picker on tablet+mobile (≤900px) — lang is in sidebar */
-        @media(max-width:900px){
-          .nav-lang{display:none!important;}
-        }
+        /* Lang picker is now a modal popup, so it works on all sizes — no hide rule needed */
 
         /* Compact navbar on phones (≤640px) */
         @media(max-width:640px){
           .nav-inner{padding:0 6px!important;gap:4px!important;}
+
+          /* Compact lang button — show only flag */
+          .nav-lang button{padding:6px 8px!important;font-size:11.5px!important;}
 
           /* Compact cart icon */
           .nav-cart > div{width:32px!important;height:32px!important;font-size:15px!important;}
@@ -979,7 +974,7 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
       {/* ═══════════════════════════════ NAV ═══════════════════════════════ */}
       {/* Spacer so fixed nav doesn't cover content */}
       <div style={{ height: 62 }}/>
-      <nav style={{ position:"fixed", top:0, left:0, right:0, zIndex:100, background:"white", boxShadow:scrolled?"0 2px 20px rgba(7,91,176,0.1)":"0 1px 0 #E2E8F0", transition:"box-shadow 0.3s", overflow:"hidden" }}>
+      <nav style={{ position:"fixed", top:0, left:0, right:0, zIndex:100, background:"white", boxShadow:scrolled?"0 2px 20px rgba(7,91,176,0.1)":"0 1px 0 #E2E8F0", transition:"box-shadow 0.3s" }}>
         <div className="nav-inner" style={{ maxWidth:1280, margin:"0 auto", padding:"0 12px", display:"flex", alignItems:"center", justifyContent:"space-between", height:62, gap:8, minWidth:0 }}>
 
           {/* Logo */}
@@ -1006,21 +1001,44 @@ export default function LandingPage({ onLogin, onRegister, smUser, onSmLogout })
           {/* Right: lang + auth + hamburger */}
           <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }} className="nav-auth">
             {/* Lang picker */}
-            <div className="nav-lang" style={{ position:"relative" }} onClick={e=>{e.stopPropagation();setLangOpen(!langOpen);}}>
-              <button style={{ display:"flex", alignItems:"center", gap:5, background:"transparent", border:"1.5px solid #E2E8F0", borderRadius:10, padding:"6px 10px", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+            <div className="nav-lang" style={{ position:"relative" }}>
+              <button onClick={() => setLangOpen(true)}
+                style={{ display:"flex", alignItems:"center", gap:5, background:"transparent", border:"1.5px solid #E2E8F0", borderRadius:10, padding:"6px 10px", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
                 {LANGS.find(l=>l.key===lang)?.flag} {T[lang].lang} ▾
               </button>
-              {langOpen && (
-                <div className="ld" onClick={e=>e.stopPropagation()}>
-                  {LANGS.map(l=>(
-                    <div key={l.key} className={`lo${lang===l.key?" sel":""}`} onClick={()=>{setLang(l.key);setLangOpen(false);}}>
-                      <span>{l.flag}</span><span>{l.label}</span>
-                      {lang===l.key&&<span style={{marginLeft:"auto",color:C.action}}>✓</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
+
+            {/* Lang picker modal (rendered at root, no clipping) */}
+            {langOpen && (
+              <div onClick={() => setLangOpen(false)}
+                style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:20, animation:"fadeIn 0.2s ease" }}>
+                <div onClick={e => e.stopPropagation()}
+                  style={{ background:"white", borderRadius:18, padding:20, width:"100%", maxWidth:340, boxShadow:"0 24px 64px rgba(0,0,0,0.3)" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+                    <div style={{ fontSize:16, fontWeight:900, color:C.primary }}>🌐 Language</div>
+                    <button onClick={() => setLangOpen(false)} style={{ background:"transparent", border:"none", fontSize:20, cursor:"pointer", color:C.muted, lineHeight:1 }}>✕</button>
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                    {LANGS.map(l => (
+                      <button key={l.key} onClick={() => { setLang(l.key); setLangOpen(false); }}
+                        style={{
+                          display:"flex", alignItems:"center", gap:12,
+                          padding:"12px 14px", borderRadius:10,
+                          background: lang === l.key ? "#EFF6FF" : "white",
+                          border: lang === l.key ? `1.5px solid ${C.primary}` : "1.5px solid #E2E8F0",
+                          color: lang === l.key ? C.primary : C.text,
+                          fontSize:14, fontWeight:700, cursor:"pointer", fontFamily:"inherit",
+                          textAlign:"left",
+                        }}>
+                        <span style={{ fontSize:18 }}>{l.flag}</span>
+                        <span style={{ flex:1 }}>{l.label}</span>
+                        {lang === l.key && <span style={{ color:C.primary }}>✓</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Cart icon */}
             <div className="nav-cart" style={{ position:"relative", cursor:"pointer", flexShrink:0 }} onClick={()=>setCartOpen(true)}>

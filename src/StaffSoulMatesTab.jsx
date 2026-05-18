@@ -96,6 +96,7 @@ function InboundSubtab({ user }) {
   const [parcels, setParcels] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
 
   // Fetch all SM members (tier='SM')
   useEffect(() => {
@@ -117,10 +118,27 @@ function InboundSubtab({ user }) {
     setLoading(true);
     const { data } = await supabase
       .from("parcels")
-      .select("*")
+      .select(`
+        *,
+        parcel_items(weight, width, length, height),
+        parcel_photos(id, url, type)
+      `)
       .eq("member_id", selectedMember.id)
       .order("arrived_at", { ascending: false });
-    setParcels(data || []);
+
+    // Normalize: roll up weight + photo URLs
+    const normalized = (data || []).map(p => {
+      const items  = p.parcel_items  || [];
+      const photos = p.parcel_photos || [];
+      const totalWeight = items.reduce((s,i) => s + (Number(i.weight) || 0) * (Number(i.qty) || 1), 0);
+      return {
+        ...p,
+        weight_kg:  totalWeight || null,
+        all_photos: photos.map(ph => ph.url),
+      };
+    });
+
+    setParcels(normalized);
     setLoading(false);
   }, [selectedMember]);
 
@@ -256,9 +274,27 @@ function InboundSubtab({ user }) {
                       </div>
                       <div style={{ display:"flex", gap:12, fontSize:11, color:C.muted, flexWrap:"wrap", marginBottom:6 }}>
                         <span>🔢 {p.domestic_tracking || "—"}</span>
-                        <span>⚖️ {p.weight_kg || "—"} kg</span>
+                        <span>⚖️ {p.weight_kg ? `${Number(p.weight_kg).toFixed(2)} kg` : "—"}</span>
                         <span>📅 {p.arrived_at ? new Date(p.arrived_at).toLocaleDateString() : "—"}</span>
                       </div>
+
+                      {/* Photos thumbnails */}
+                      {p.all_photos && p.all_photos.length > 0 && (
+                        <div style={{ display:"flex", gap:6, marginBottom:6, flexWrap:"wrap" }}>
+                          {p.all_photos.slice(0, 5).map((url, i) => (
+                            <button key={i} onClick={() => setLightbox({ photos: p.all_photos, index: i })}
+                              style={{ width:52, height:52, borderRadius:6, overflow:"hidden", border:`1px solid ${C.border}`, padding:0, cursor:"pointer", background:"transparent", position:"relative", flexShrink:0 }}>
+                              <img src={url} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
+                              {i === 4 && p.all_photos.length > 5 && (
+                                <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.6)", color:"white", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:800 }}>
+                                  +{p.all_photos.length - 5}
+                                </div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
                       {p.flag_note && (
                         <div style={{ background:"#fef9c3", border:"1px solid #fde047", borderRadius:6, padding:"6px 8px", fontSize:11, color:"#854d0e", fontWeight:700 }}>
                           ⚠️ {p.flag_note}
@@ -272,6 +308,51 @@ function InboundSubtab({ user }) {
            )
           }
         </>
+      )}
+
+      {/* Photo Lightbox — rendered at root so it overlays everything */}
+      <StaffPhotoLightbox lightbox={lightbox} onClose={() => setLightbox(null)} onNav={(dir) => setLightbox(lb => lb && ({ ...lb, index: (lb.index + dir + lb.photos.length) % lb.photos.length }))}/>
+    </div>
+  );
+}
+
+// ── Photo Lightbox modal (Staff) ─────────────────────────────────────
+function StaffPhotoLightbox({ lightbox, onClose, onNav }) {
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowLeft")  onNav(-1);
+      if (e.key === "ArrowRight") onNav(1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox, onClose, onNav]);
+
+  if (!lightbox) return null;
+  const { photos, index } = lightbox;
+  const url = photos[index];
+
+  return (
+    <div onClick={onClose}
+      style={{
+        position:"fixed", inset:0, background:"rgba(0,0,0,0.92)",
+        zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center",
+        animation:"sLbFadeIn 0.18s ease",
+      }}>
+      <style>{`@keyframes sLbFadeIn{from{opacity:0}to{opacity:1}}`}</style>
+      <button onClick={onClose} style={{ position:"absolute", top:18, right:18, width:42, height:42, borderRadius:"50%", background:"rgba(255,255,255,0.15)", color:"white", border:"none", fontSize:22, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
+      {photos.length > 1 && (
+        <div style={{ position:"absolute", top:24, left:24, padding:"6px 14px", background:"rgba(255,255,255,0.15)", color:"white", borderRadius:20, fontSize:13, fontWeight:700 }}>
+          {index + 1} / {photos.length}
+        </div>
+      )}
+      {photos.length > 1 && (
+        <button onClick={(e) => { e.stopPropagation(); onNav(-1); }} style={{ position:"absolute", left:18, top:"50%", transform:"translateY(-50%)", width:48, height:48, borderRadius:"50%", background:"rgba(255,255,255,0.15)", color:"white", border:"none", fontSize:24, cursor:"pointer" }}>‹</button>
+      )}
+      <img src={url} alt="" onClick={(e) => e.stopPropagation()} style={{ maxWidth:"92vw", maxHeight:"88vh", objectFit:"contain", borderRadius:8, boxShadow:"0 20px 80px rgba(0,0,0,0.6)" }}/>
+      {photos.length > 1 && (
+        <button onClick={(e) => { e.stopPropagation(); onNav(1); }} style={{ position:"absolute", right:18, top:"50%", transform:"translateY(-50%)", width:48, height:48, borderRadius:"50%", background:"rgba(255,255,255,0.15)", color:"white", border:"none", fontSize:24, cursor:"pointer" }}>›</button>
       )}
     </div>
   );
@@ -363,14 +444,15 @@ function NewParcelForm({ member, staffUserId, onCancel, onSaved }) {
         }
 
         // Insert rows into parcel_photos
+        // Schema enum photo_type: 'arrival' | 'recheck' | 'packing'
+        // Use 'arrival' for inbound/new parcel photos.
         const rows = uploadedUrls.map(url => ({
           parcel_id: parcel.id,
           url,
-          type:      "inbound",
-          uploaded_by: staffUserId,
+          type:      "arrival",
         }));
         const { error: photoErr } = await supabase.from("parcel_photos").insert(rows);
-        if (photoErr) console.warn("parcel_photos insert warning:", photoErr);
+        if (photoErr) console.warn("parcel_photos insert failed:", photoErr);
       }
 
       onSaved?.();

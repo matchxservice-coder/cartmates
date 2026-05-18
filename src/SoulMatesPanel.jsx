@@ -154,6 +154,8 @@ function EmptyState({ icon, title, hint, address }) {
 }
 
 function TabParcels({ parcels, profile, loading }) {
+  const [lightbox, setLightbox] = useState(null);  // { photos: [...urls], index: 0 }
+
   if (loading) return <LoadingState/>;
   if (!parcels || parcels.length === 0) {
     return <EmptyState icon="📦" title="No parcels yet" hint="When packages arrive at our warehouse, they'll show up here." address={profile.warehouse_address}/>;
@@ -206,9 +208,27 @@ function TabParcels({ parcels, profile, loading }) {
                 <div style={{ fontSize:13, fontWeight:800, color:C.text, marginBottom:4, lineHeight:1.3 }}>{p.item_desc || "Parcel"}</div>
                 <div style={{ display:"flex", gap:12, fontSize:11, color:C.muted, flexWrap:"wrap", marginBottom:8 }}>
                   <span>🔢 {p.domestic_tracking || "—"}</span>
-                  <span>⚖️ {p.weight_kg ? `${p.weight_kg} kg` : "—"}</span>
+                  <span>⚖️ {p.weight_kg ? `${Number(p.weight_kg).toFixed(2)} kg` : "—"}</span>
                   <span>📅 {p.arrived_at ? new Date(p.arrived_at).toLocaleDateString() : "—"}</span>
                 </div>
+
+                {/* Photos grid */}
+                {p.all_photos && p.all_photos.length > 0 && (
+                  <div style={{ display:"flex", gap:6, marginBottom:8, flexWrap:"wrap" }}>
+                    {p.all_photos.slice(0, 4).map((url, i) => (
+                      <button key={i} onClick={() => setLightbox({ photos: p.all_photos, index: i })}
+                        style={{ width:54, height:54, borderRadius:8, overflow:"hidden", border:`1px solid ${C.border}`, display:"block", flexShrink:0, position:"relative", padding:0, cursor:"pointer", background:"transparent" }}>
+                        <img src={url} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
+                        {i === 3 && p.all_photos.length > 4 && (
+                          <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.6)", color:"white", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:800 }}>
+                            +{p.all_photos.length - 4}
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
                   <StatusBadge map={PARCEL_STATUS} key_={p.status}/>
                   <button style={{ background:"#EFF6FF", color:C.primary, border:"none", borderRadius:8, padding:"4px 10px", fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
@@ -223,6 +243,69 @@ function TabParcels({ parcels, profile, loading }) {
           </Card>
         ))}
       </div>
+      <PhotoLightbox lightbox={lightbox} onClose={() => setLightbox(null)} onNav={(dir) => setLightbox(lb => lb && ({ ...lb, index: (lb.index + dir + lb.photos.length) % lb.photos.length }))}/>
+    </div>
+  );
+}
+
+// ── Photo Lightbox modal ──────────────────────────────────────────────────
+function PhotoLightbox({ lightbox, onClose, onNav }) {
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowLeft")  onNav(-1);
+      if (e.key === "ArrowRight") onNav(1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox, onClose, onNav]);
+
+  if (!lightbox) return null;
+  const { photos, index } = lightbox;
+  const url = photos[index];
+
+  return (
+    <div onClick={onClose}
+      style={{
+        position:"fixed", inset:0, background:"rgba(0,0,0,0.92)",
+        zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center",
+        animation:"fadeIn 0.18s ease",
+      }}>
+      <style>{`@keyframes fadeIn{from{opacity:0}to{opacity:1}}`}</style>
+
+      {/* Close button */}
+      <button onClick={onClose}
+        style={{ position:"absolute", top:18, right:18, width:42, height:42, borderRadius:"50%", background:"rgba(255,255,255,0.15)", color:"white", border:"none", fontSize:22, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(6px)" }}>
+        ✕
+      </button>
+
+      {/* Counter */}
+      {photos.length > 1 && (
+        <div style={{ position:"absolute", top:24, left:24, padding:"6px 14px", background:"rgba(255,255,255,0.15)", color:"white", borderRadius:20, fontSize:13, fontWeight:700, backdropFilter:"blur(6px)" }}>
+          {index + 1} / {photos.length}
+        </div>
+      )}
+
+      {/* Prev */}
+      {photos.length > 1 && (
+        <button onClick={(e) => { e.stopPropagation(); onNav(-1); }}
+          style={{ position:"absolute", left:18, top:"50%", transform:"translateY(-50%)", width:48, height:48, borderRadius:"50%", background:"rgba(255,255,255,0.15)", color:"white", border:"none", fontSize:24, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(6px)" }}>
+          ‹
+        </button>
+      )}
+
+      {/* Image */}
+      <img src={url} alt="" onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth:"92vw", maxHeight:"88vh", objectFit:"contain", borderRadius:8, boxShadow:"0 20px 80px rgba(0,0,0,0.6)" }}/>
+
+      {/* Next */}
+      {photos.length > 1 && (
+        <button onClick={(e) => { e.stopPropagation(); onNav(1); }}
+          style={{ position:"absolute", right:18, top:"50%", transform:"translateY(-50%)", width:48, height:48, borderRadius:"50%", background:"rgba(255,255,255,0.15)", color:"white", border:"none", fontSize:24, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(6px)" }}>
+          ›
+        </button>
+      )}
     </div>
   );
 }
@@ -538,17 +621,37 @@ export default function SoulMatesPanel({ user, onLogout, cartCount = 0, onOpenCa
       }
 
       // Parcels (member_id = current user)
-      // Using select("*") to avoid 400 from non-existent column names
+      // JOIN parcel_items (for weight + dimensions) and parcel_photos (for images)
       const { data: pc, error: pcErr } = await supabase
         .from("parcels")
-        .select("*")
+        .select(`
+          *,
+          parcel_items(weight, width, length, height, item_desc, qty),
+          parcel_photos(id, url, type)
+        `)
         .eq("member_id", user.id)
         .in("status", ["arrived","rechecking","packed"])
         .order("arrived_at", { ascending: false });
 
       if (pcErr) console.warn("parcels query failed:", pcErr);
-      setParcels(pc || []);
-      setProfile(p => ({ ...p, parcels_in_storage: (pc || []).length }));
+
+      // Normalize: roll up parcel_items weight + photos to top level
+      const normalized = (pc || []).map(p => {
+        const items  = p.parcel_items || [];
+        const photos = p.parcel_photos || [];
+        const totalWeight = items.reduce((s,i) => s + (Number(i.weight) || 0) * (Number(i.qty) || 1), 0);
+        return {
+          ...p,
+          weight_kg:        totalWeight || null,
+          inbound_photos:   photos.filter(ph => ph.type === "arrival").map(ph => ph.url),
+          recheck_photos:   photos.filter(ph => ph.type === "recheck").map(ph => ph.url),
+          packing_photos:   photos.filter(ph => ph.type === "packing").map(ph => ph.url),
+          all_photos:       photos.map(ph => ph.url),
+        };
+      });
+
+      setParcels(normalized);
+      setProfile(p => ({ ...p, parcels_in_storage: normalized.length }));
 
       // Marketplace orders
       const { data: mo } = await supabase
@@ -579,36 +682,31 @@ export default function SoulMatesPanel({ user, onLogout, cartCount = 0, onOpenCa
         setOrders([]);
       }
 
-      // Shipments — using select("*") to handle schema field-name variance.
-      // Note: schema uses 'issued_at' on shipments, not 'created_at'.
-      const { data: sh, error: shErr } = await supabase
+      // Shipments — joined via shipment_boxes.member_id pattern
+      // Note: this assumes shipments table has member_id; adjust if your schema
+      // links shipments via shipment_boxes only.
+      const { data: sh } = await supabase
         .from("shipments")
-        .select("*")
+        .select("id, doc_no, status, tracking_number, carrier, total_weight_kg, shipping_cost, destination, created_at")
         .eq("member_id", user.id)
-        .order("issued_at", { ascending: false });
+        .order("created_at", { ascending: false });
 
-      if (shErr) console.warn("shipments query failed:", shErr);
       setShipments((sh || []).map(s => ({
         ...s,
-        total_weight: s.total_weight_kg || s.total_weight || s.weight_kg,
-        created_at:   s.issued_at || s.created_at,   // normalize for UI
+        total_weight: s.total_weight_kg,
       })));
 
       // Payments — combine traditional payments + marketplace_payments
-      // Using select("*") on both for schema field-name safety.
-      const [{ data: traditional, error: tradErr }, { data: mpPay, error: mpErr }] = await Promise.all([
+      const [{ data: traditional }, { data: mpPay }] = await Promise.all([
         supabase.from("payments")
-          .select("*")
+          .select("id, amount_thb, status, created_at, source_type, source_ref")
           .eq("member_id", user.id)
           .order("created_at", { ascending: false }),
         supabase.from("marketplace_payments")
-          .select("*")
+          .select("id, amount_thb, status, created_at, method, order_id")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false }),
       ]);
-
-      if (tradErr) console.warn("payments query failed:", tradErr);
-      if (mpErr)   console.warn("marketplace_payments query failed:", mpErr);
 
       // Normalize and merge
       const merged = [

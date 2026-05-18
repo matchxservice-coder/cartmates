@@ -24,7 +24,7 @@ const C = {
   muted:   "#64748B",
 };
 
-export default function PlanSelector({ onSelect, onBack }) {
+export default function PlanSelector({ onSelect, onBack, onLogin }) {
   const [hovered, setHovered] = useState(null);
 
   const plans = [
@@ -91,8 +91,30 @@ export default function PlanSelector({ onSelect, onBack }) {
         }
       `}</style>
 
+      {/* Back to Home */}
+      <div style={{ maxWidth: 900, margin: "0 auto", paddingTop: 0 }}>
+        <button onClick={onBack}
+          style={{
+            background: "rgba(255,255,255,0.15)",
+            color: "white",
+            border: "1.5px solid rgba(255,255,255,0.3)",
+            borderRadius: 10,
+            padding: "8px 16px",
+            fontSize: 13,
+            fontWeight: 700,
+            cursor: "pointer",
+            fontFamily: "inherit",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            backdropFilter: "blur(8px)",
+          }}>
+          ← Back to Home
+        </button>
+      </div>
+
       {/* Header */}
-      <div className="fade-up" style={{ maxWidth: 900, margin: "0 auto 32px", textAlign: "center", color: "white", paddingTop: 20 }}>
+      <div className="fade-up" style={{ maxWidth: 900, margin: "20px auto 32px", textAlign: "center", color: "white", paddingTop: 0 }}>
         <div style={{ fontSize: 38, marginBottom: 8 }}>🐰</div>
         <h1 style={{ fontFamily: "'Baloo 2', sans-serif", fontSize: "clamp(28px, 5vw, 38px)", fontWeight: 900, lineHeight: 1.15, marginBottom: 10 }}>
           Welcome to CartMates
@@ -199,7 +221,7 @@ export default function PlanSelector({ onSelect, onBack }) {
       <div className="fade-up-2" style={{ maxWidth: 900, margin: "28px auto 0", textAlign: "center" }}>
         <div style={{ color: "rgba(255,255,255,0.85)", fontSize: 13, marginBottom: 12 }}>
           Already have an account?{" "}
-          <span onClick={onBack} style={{ color: C.yellow, fontWeight: 800, cursor: "pointer", textDecoration: "underline" }}>
+          <span onClick={onLogin || onBack} style={{ color: C.yellow, fontWeight: 800, cursor: "pointer", textDecoration: "underline" }}>
             Log in instead
           </span>
         </div>

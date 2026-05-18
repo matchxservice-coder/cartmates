@@ -40,6 +40,7 @@ export default function App() {
   const [page, setPage]               = useState("landing");
   const [booting, setBooting]         = useState(true);
   const [defaultPackage, setDefaultPackage] = useState(null);  // passed to RegisterPage
+  const [statusMessage, setStatusMessage]   = useState(null);  // { title, body, icon } shown as modal
 
   // ── 1. Bootstrap session ─────────────────────────────────────────────────
   useEffect(() => {
@@ -88,15 +89,24 @@ export default function App() {
 
       if (data.account_status === "pending_approval") {
         await supabase.auth.signOut();
-        alert("⏳ Your account is pending approval. We'll notify you once activated.");
+        setStatusMessage({
+          icon:  "⏳",
+          title: "Your account is pending approval",
+          body:  "Thanks for signing up! A staff member will activate your Team Mates account shortly. You'll receive an email once approved — usually within 24 hours during business days.",
+        });
         return;
       }
       if (data.account_status === "suspended") {
         await supabase.auth.signOut();
-        alert("Your account has been suspended. Please contact support.");
+        setStatusMessage({
+          icon:  "🚫",
+          title: "Account suspended",
+          body:  "Your account has been suspended. Please contact our support team for assistance.",
+        });
         return;
       }
       if (data.account_status === "active") {
+        console.log("🔍 [hydrate] active user:", { role: data.role, tier: data.tier, smart_id: data.smart_id });
         setter({
           ...authUser,
           role:           data.role,
@@ -117,20 +127,12 @@ export default function App() {
   // ── Handlers ─────────────────────────────────────────────────────────────
   // handleLogin: re-hydrate from profiles to ensure ALL fields (including tier)
   // are loaded. LoginPage only passes a partial user object — without this
-  // re-hydration, customer_sm routing fails because user.tier is undefined.
+  // re-hydration, tier comes back undefined and SM users route to TM dashboard.
   const handleLogin = async (userData) => {
     console.log("🔐 handleLogin called with:", userData);
-    try {
-      if (userData?.id) {
-        await hydrateUserFromSession(userData, setUser);
-        console.log("✅ handleLogin: hydrated successfully");
-      } else {
-        console.log("⚠️ handleLogin: no userData.id, using partial user");
-        setUser(userData);
-      }
-    } catch (err) {
-      console.error("❌ handleLogin error:", err);
-      // Fallback: at least set what we have so the user isn't stuck
+    if (userData?.id) {
+      await hydrateUserFromSession(userData, setUser);
+    } else {
       setUser(userData);
     }
   };
@@ -148,9 +150,12 @@ export default function App() {
     setPage("register");
   };
 
-  // ── Boot loading screen ──────────────────────────────────────────────────
+  // ── Resolve which page to render ────────────────────────────────────────
+  let view = null;
+
+  // Boot loading screen
   if (booting) {
-    return (
+    view = (
       <div style={{
         minHeight: "100vh",
         display: "flex", alignItems: "center", justifyContent: "center",
@@ -164,18 +169,14 @@ export default function App() {
       </div>
     );
   }
-
-  // ── Logged-in → Role + Package routing ───────────────────────────────────
-  if (user) {
-    console.log("🔍 USER DEBUG:", user);        
-    console.log("🔍 user.tier =", user.tier);  
-    if (user.role === "manager") return <ManagerDashboard user={user} onLogout={handleLogout} />;
-    if (user.role === "staff")   return <StaffDashboard   user={user} onLogout={handleLogout} />;
-
-    if (user.role === "customer") {
-      // Soul Mates → stay on LandingPage, render SM Panel via prop
+  // Logged-in → Role + Package routing
+  else if (user) {
+    console.log("🔍 [App] user routing:", { role: user.role, tier: user.tier, smart_id: user.smart_id });
+    if (user.role === "manager")      view = <ManagerDashboard user={user} onLogout={handleLogout} />;
+    else if (user.role === "staff")   view = <StaffDashboard   user={user} onLogout={handleLogout} />;
+    else if (user.role === "customer") {
       if (user.tier === "SM") {
-        return (
+        view = (
           <LandingPage
             smUser={user}
             onSmLogout={handleLogout}
@@ -183,19 +184,16 @@ export default function App() {
             onRegister={() => {}}
           />
         );
+      } else {
+        view = <CartMatesDashboard user={user} onLogout={handleLogout} />;
       }
-      // Team Mates (ST/PR/UL) → full dashboard
-      return <CartMatesDashboard user={user} onLogout={handleLogout} />;
+    } else {
+      handleLogout();
     }
-
-    // Unknown role → safe logout
-    handleLogout();
-    return null;
   }
-
-  // ── Not logged in → public page routing ─────────────────────────────────
-  if (page === "login") {
-    return (
+  // Public page routing
+  else if (page === "login") {
+    view = (
       <LoginPage
         onLogin={handleLogin}
         onRegister={() => setPage("plan_choice")}
@@ -203,30 +201,83 @@ export default function App() {
       />
     );
   }
-
-  if (page === "plan_choice") {
-    return (
+  else if (page === "plan_choice") {
+    view = (
       <PlanSelector
         onSelect={handlePlanChosen}
-        onBack={() => setPage("login")}
+        onBack={() => setPage("landing")}
+        onLogin={() => setPage("login")}
       />
     );
   }
-
-  if (page === "register") {
-    return (
+  else if (page === "register") {
+    view = (
       <RegisterPage
         defaultPackage={defaultPackage}
         onBack={() => setPage("plan_choice")}
       />
     );
   }
+  else {
+    view = (
+      <LandingPage
+        onLogin={() => setPage("login")}
+        onRegister={() => setPage("plan_choice")}
+      />
+    );
+  }
 
-  // Default: Landing
   return (
-    <LandingPage
-      onLogin={() => setPage("login")}
-      onRegister={() => setPage("plan_choice")}
-    />
+    <>
+      {view}
+      <StatusModal message={statusMessage} onClose={() => setStatusMessage(null)}/>
+    </>
+  );
+}
+
+
+// ── Status Modal — persistent until user dismisses ──────────────────────
+function StatusModal({ message, onClose }) {
+  if (!message) return null;
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
+        zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 20, fontFamily: "'Nunito', sans-serif",
+        animation: "smFadeIn 0.2s ease",
+      }}>
+      <style>{`
+        @keyframes smFadeIn { from{opacity:0} to{opacity:1} }
+        @keyframes smPopIn { from{transform:scale(0.9);opacity:0} to{transform:scale(1);opacity:1} }
+      `}</style>
+      <div onClick={e => e.stopPropagation()}
+        style={{
+          background: "white", borderRadius: 18, padding: 28,
+          maxWidth: 420, width: "100%", textAlign: "center",
+          boxShadow: "0 24px 64px rgba(0,0,0,0.3)",
+          animation: "smPopIn 0.25s cubic-bezier(0.34,1.56,0.64,1)",
+        }}>
+        <div style={{ fontSize: 52, marginBottom: 14, lineHeight: 1 }}>{message.icon}</div>
+        <div style={{ fontSize: 19, fontWeight: 900, color: "#075BB0", marginBottom: 10 }}>
+          {message.title}
+        </div>
+        <div style={{ fontSize: 14, color: "#475569", lineHeight: 1.65, marginBottom: 22 }}>
+          {message.body}
+        </div>
+        <button onClick={onClose}
+          style={{
+            width: "100%", padding: "12px",
+            background: "linear-gradient(135deg, #075BB0, #0484CF)",
+            color: "white", border: "none", borderRadius: 12,
+            fontSize: 14, fontWeight: 900, cursor: "pointer",
+            fontFamily: "inherit",
+            boxShadow: "0 6px 16px rgba(7,91,176,0.3)",
+          }}>
+          Got it
+        </button>
+      </div>
+    </div>
   );
 }
