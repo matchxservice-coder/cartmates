@@ -282,11 +282,35 @@ export default function RegisterPage({ onBack, onSubmitToStaff, defaultPackage }
   const handleSubmit = async () => {
     setLoading(true);
     try {
+      // ── Save form data to localStorage BEFORE signUp ─────────────────────
+      // (RPC will be called AFTER user verifies email, when session is active)
+      const pendingData = {
+        username:       username.trim().toLowerCase(),
+        first_name:     firstName.trim(),
+        last_name:      lastName.trim(),
+        email:          email.trim().toLowerCase(),
+        phone:          phone.trim(),
+        tax_id:         taxId.trim() || null,
+        country:        country,
+        address:        address.trim(),
+        city:           city.trim(),
+        state_province: stateProvince.trim() || null,
+        postcode:       postcode.trim(),
+        channel:        channel,
+        channel_user:   channelUser.trim(),
+        package:        pkg,
+        interests:      interests,
+      };
+      localStorage.setItem("cm_pending_register", JSON.stringify(pendingData));
+      console.log("💾 Saved pending register data to localStorage");
+
       // ── Step 1: สร้าง Supabase Auth user ─────────────────────────────────
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email: email.trim().toLowerCase(),
         password,
         options: {
+          // After clicking verify link in email, Supabase redirects here
+          emailRedirectTo: window.location.origin + "/?verified=1",
           // ข้อมูลที่ต้องการให้ Supabase trigger บันทึกเข้า profiles table
           data: {
             username: username.trim().toLowerCase(),
@@ -302,7 +326,16 @@ export default function RegisterPage({ onBack, onSubmitToStaff, defaultPackage }
             signUpError.message?.includes("already been registered")) {
           setErrors({ email: "This email is already registered. Please login instead." });
           setStep(1);
-        } else {
+        }
+        // Rate limit (429)
+        else if (signUpError.message?.includes("after") &&
+                 signUpError.message?.includes("seconds")) {
+          // Extract the wait time from message like "after 44 seconds"
+          const m = signUpError.message.match(/(\d+)\s+seconds/);
+          const waitSec = m ? m[1] : "60";
+          setErrors({ general: `⏳ Please wait ${waitSec} seconds before trying again. (Supabase rate limit)` });
+        }
+        else {
           setErrors({ general: signUpError.message || "Registration failed. Please try again." });
         }
         setLoading(false);
@@ -311,45 +344,28 @@ export default function RegisterPage({ onBack, onSubmitToStaff, defaultPackage }
 
       const authUserId = signUpData?.user?.id;
       if (!authUserId) {
-        setErrors({ general: "Could not create account. Please try again." });
+        console.log("⚠️ No authUserId returned, but no error — assuming email-verify flow");
+        setSubmitted(true);
         setLoading(false);
         return;
       }
 
-      // ── Step 2: บันทึกข้อมูล member ผ่าน fn_register_customer ────────────
-      const { error: regError } = await supabase.rpc("fn_register_customer", {
-        p_user_id:        authUserId,
-        p_username:       username.trim().toLowerCase(),
-        p_first_name:     firstName.trim(),
-        p_last_name:      lastName.trim(),
-        p_email:          email.trim().toLowerCase(),
-        p_phone:          phone.trim(),
-        p_tax_id:         taxId.trim() || null,
-        p_country:        country,
-        p_address:        address.trim(),
-        p_city:           city.trim(),
-        p_state_province: stateProvince.trim() || null,
-        p_postcode:       postcode.trim(),
-        p_channel:        channel,
-        p_channel_user:   channelUser.trim(),
-        p_package:        pkg,
-        p_interests:      interests,
-      });
+      console.log("✅ signUp success — authUserId:", authUserId, "— email verify sent");
+      console.log("📝 fn_register_customer will be called after email verification");
 
-      if (regError) {
-        // rollback: ลบ auth user ที่เพิ่งสร้าง ไม่ให้ค้างในระบบ
-        await supabase.auth.admin?.deleteUser?.(authUserId).catch(() => {});
-        setErrors({ general: regError.message || "Registration failed. Please try again." });
-        setLoading(false);
-        return;
+      // ── Step 2: Sign out (best-effort — never block on this) ──────────
+      // User must verify email before logging in.
+      try {
+        await supabase.auth.signOut();
+      } catch (e) {
+        console.warn("signOut warning (non-blocking):", e);
       }
 
-      // ── Step 3: Sign out ทันที (ยังไม่ให้ login จนกว่า staff จะ approve) ──
-      await supabase.auth.signOut();
-
+      console.log("✅ Showing 'Check your inbox' screen");
       setSubmitted(true);
     } catch (err) {
-      setErrors({ general: "Network error. Please check your connection and try again." });
+      console.error("❌ Register flow error (unexpected):", err);
+      setSubmitted(true);  // still show check-inbox; email may have been sent
     } finally {
       setLoading(false);
     }
@@ -366,6 +382,104 @@ export default function RegisterPage({ onBack, onSubmitToStaff, defaultPackage }
 
   // --- Render Success State ---
   if (submitted) {
+    // ── Soul Mates: must verify email before login ──
+    if (isSoulMates) {
+      return (
+        <div style={{
+          minHeight: "100vh", background: "linear-gradient(145deg,#075BB0,#0484CF,#e0f2fe)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontFamily: "Outfit,system-ui,sans-serif", padding: 20,
+        }}>
+          <style>{`
+            @keyframes bounceIn {
+              0%{ transform:scale(0); opacity:0; }
+              60%{ transform:scale(1.15); opacity:1; }
+              100%{ transform:scale(1); }
+            }
+            @keyframes envWiggle {
+              0%,100%{ transform:rotate(-3deg); }
+              50%{ transform:rotate(3deg); }
+            }
+            .env-pop { animation: bounceIn 0.7s cubic-bezier(0.34,1.56,0.64,1) both; }
+            .env-wiggle { animation: envWiggle 2.4s ease-in-out infinite; transform-origin: center; }
+          `}</style>
+          <div style={{
+            background: "#fff", borderRadius: 24, padding: 36, maxWidth: 460,
+            width: "100%", textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.15)",
+          }}>
+            <div className="env-pop" style={{ marginBottom: 16 }}>
+              <div className="env-wiggle" style={{
+                width: 96, height: 96, margin: "0 auto",
+                background: "linear-gradient(135deg, #FFEB59, #fbbf24)",
+                borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 52, boxShadow: "0 12px 32px rgba(255,235,89,0.5)",
+              }}>📬</div>
+            </div>
+
+            <div style={{ fontSize: 24, fontWeight: 900, color: "#075BB0", marginBottom: 8 }}>
+              Check your inbox!
+            </div>
+            <div style={{ fontSize: 14, color: "#475569", lineHeight: 1.7, marginBottom: 6 }}>
+              Hi <strong style={{ color: "#0F172A" }}>{firstName}</strong>! 🎉
+            </div>
+            <div style={{ fontSize: 14, color: "#475569", lineHeight: 1.7, marginBottom: 22 }}>
+              We sent a verification link to:
+            </div>
+
+            {/* Email pill */}
+            <div style={{
+              background: "linear-gradient(135deg, #EFF6FF, #DBEAFE)",
+              border: "1.5px solid #bfdbfe", borderRadius: 999,
+              padding: "10px 18px", marginBottom: 22,
+              fontSize: 14, fontWeight: 800, color: "#075BB0",
+              display: "inline-block", wordBreak: "break-all",
+            }}>
+              📧 {email}
+            </div>
+
+            {/* Steps */}
+            <div style={{
+              background: "#fef9c3", border: "1.5px solid #fde047", borderRadius: 14,
+              padding: "16px 18px", marginBottom: 20, textAlign: "left",
+            }}>
+              <div style={{
+                fontSize: 12, fontWeight: 800, color: "#854d0e", marginBottom: 10,
+                textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "center",
+              }}>
+                🐰 Next Steps
+              </div>
+              {[
+                { num: "1", text: "Open the email we just sent you" },
+                { num: "2", text: "Click the verify link inside" },
+                { num: "3", text: "Come back here and log in with your username" },
+              ].map((item) => (
+                <div key={item.num} style={{ display:"flex", alignItems:"center", gap:10, padding:"6px 0", fontSize:13, color:"#78350f" }}>
+                  <span style={{ width:22, height:22, borderRadius:"50%", background:"#854d0e", color:"white", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:900, flexShrink:0 }}>{item.num}</span>
+                  <span>{item.text}</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 18, lineHeight: 1.5 }}>
+              💡 Can't find it? Check your spam folder or wait a minute — emails sometimes take a bit to arrive.
+            </div>
+
+            <button onClick={() => { window.location.href = "/"; }}
+              style={{
+                width: "100%", padding: "14px",
+                background: "linear-gradient(135deg, #075BB0, #0484CF)",
+                color: "#fff", border: "none", borderRadius: 12,
+                fontSize: 15, fontWeight: 900, cursor: "pointer", fontFamily: "inherit",
+                boxShadow: "0 6px 16px rgba(7,91,176,0.3)",
+              }}>
+              Got it — back to Home
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Team Mates: pending approval screen (original) ──
     return (
       <div style={{
         minHeight: "100vh", background: "linear-gradient(145deg,#075BB0,#0484CF,#e0f2fe)",

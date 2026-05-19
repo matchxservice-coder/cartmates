@@ -153,8 +153,28 @@ function EmptyState({ icon, title, hint, address }) {
   );
 }
 
-function TabParcels({ parcels, profile, loading }) {
+function TabParcels({ parcels, profile, loading, onRequestShipment }) {
   const [lightbox, setLightbox] = useState(null);  // { photos: [...urls], index: 0 }
+  const [selected, setSelected] = useState(() => new Set());
+
+  // selectable = parcels in 'arrived' state with no shipment yet
+  const selectableIds = new Set(
+    (parcels || []).filter(p => p.status === "arrived" && !p.shipment_id).map(p => p.id)
+  );
+
+  const toggleSelect = (id) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    setSelected(new Set(selectableIds));
+  };
+
+  const clearAll = () => setSelected(new Set());
 
   if (loading) return <LoadingState/>;
   if (!parcels || parcels.length === 0) {
@@ -193,6 +213,52 @@ function TabParcels({ parcels, profile, loading }) {
 
       <SectionTitle count={parcels.length}>My Parcels</SectionTitle>
 
+      {/* Selection action bar — sticky-feel above list */}
+      {selectableIds.size > 0 && (
+        <div style={{
+          background: selected.size > 0 ? `linear-gradient(135deg,${C.primary},${C.sky})` : "#f1f5f9",
+          color: selected.size > 0 ? "white" : C.muted,
+          border: selected.size > 0 ? "none" : "1.5px dashed #cbd5e1",
+          borderRadius: 12,
+          padding: "10px 14px",
+          marginBottom: 12,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          flexWrap: "wrap",
+          transition: "all 0.2s",
+        }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, fontSize:13, fontWeight:700 }}>
+            {selected.size > 0 ? (
+              <>
+                <span>✅ {selected.size} selected</span>
+                <button onClick={clearAll}
+                  style={{ background:"rgba(255,255,255,0.2)", color:"white", border:"none", borderRadius:8, padding:"4px 10px", fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                  Clear
+                </button>
+              </>
+            ) : (
+              <span>☐ Select parcels to ship</span>
+            )}
+          </div>
+          <div style={{ display:"flex", gap:8 }}>
+            {selected.size < selectableIds.size && (
+              <button onClick={selectAll}
+                style={{ background: selected.size > 0 ? "rgba(255,255,255,0.2)" : "white", color: selected.size > 0 ? "white" : C.primary, border: selected.size > 0 ? "none" : `1.5px solid ${C.primary}`, borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>
+                Select all ({selectableIds.size})
+              </button>
+            )}
+            {selected.size > 0 && (
+              <button onClick={() => onRequestShipment(Array.from(selected))}
+                style={{ background:"white", color:C.primary, border:"none", borderRadius:8, padding:"6px 14px", fontSize:12, fontWeight:900, cursor:"pointer", fontFamily:"inherit", boxShadow:"0 2px 8px rgba(0,0,0,0.15)" }}>
+                Request Shipment ✈️
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
         {parcels.map(p => (
           <Card key={p.id}>
@@ -203,6 +269,17 @@ function TabParcels({ parcels, profile, loading }) {
               </div>
             )}
             <div style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
+              {/* Selection checkbox — only for 'arrived' parcels not yet in shipment */}
+              {selectableIds.has(p.id) && (
+                <label style={{ display:"flex", alignItems:"center", marginTop:10, cursor:"pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={selected.has(p.id)}
+                    onChange={() => toggleSelect(p.id)}
+                    style={{ width:18, height:18, cursor:"pointer", accentColor:C.primary }}
+                  />
+                </label>
+              )}
               <div style={{ width:44, height:44, borderRadius:10, background:"linear-gradient(135deg,#EFF6FF,#DBEAFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>📦</div>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:13, fontWeight:800, color:C.text, marginBottom:4, lineHeight:1.3 }}>{p.item_desc || "Parcel"}</div>
@@ -354,6 +431,9 @@ function TabOrders({ orders, loading }) {
 }
 
 function TabShipments({ shipments, loading }) {
+  const [detail, setDetail] = useState(null);   // selected shipment for modal
+  const [lightbox, setLightbox] = useState(null);
+
   if (loading) return <LoadingState/>;
 
   return (
@@ -371,64 +451,194 @@ function TabShipments({ shipments, loading }) {
       ) : (
         <>
           <SectionTitle count={shipments.length}>My Shipments</SectionTitle>
-          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-            {shipments.map(s => (
-              <Card key={s.id}>
-                <div style={{ display:"flex", alignItems:"flex-start", gap:12 }}>
-                  <div style={{ width:44, height:44, borderRadius:10, background:"linear-gradient(135deg,#EFF6FF,#DBEAFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            {shipments.map(s => {
+              const parcelCount = s.parcels_list?.length || 0;
+              return (
+                <button key={s.id}
+                  onClick={() => setDetail(s)}
+                  style={{
+                    width:"100%", background:"white", border:`1px solid ${C.border}`, borderRadius:12,
+                    padding:"12px 14px", display:"flex", alignItems:"center", gap:12, cursor:"pointer",
+                    fontFamily:"inherit", textAlign:"left", transition:"all 0.15s",
+                  }}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary; e.currentTarget.style.boxShadow="0 4px 12px rgba(7,91,176,0.1)";}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border; e.currentTarget.style.boxShadow="none";}}
+                >
+                  <div style={{ width:38, height:38, borderRadius:10, background:"linear-gradient(135deg,#EFF6FF,#DBEAFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>
                     {s.status === "delivered" ? "✅" : "✈️"}
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, marginBottom:4, flexWrap:"wrap" }}>
-                      <div style={{ fontSize:13, fontWeight:800, color:C.text }}>{s.doc_no || s.shipment_no} {s.destination && `→ ${s.destination}`}</div>
-                      <StatusBadge map={SHIP_STATUS} key_={s.status}/>
+                    <div style={{ fontSize:13, fontWeight:800, color:C.text, fontFamily:"monospace" }}>
+                      {s.doc_no || s.id?.slice(0,8)}
                     </div>
-                    <div style={{ display:"flex", gap:12, fontSize:11, color:C.muted, marginBottom:6, flexWrap:"wrap" }}>
-                      <span>📦 {s.boxes || 1} box{(s.boxes || 1)>1?"es":""}</span>
-                      {s.total_weight && <span>⚖️ {s.total_weight} kg</span>}
-                      {s.shipping_cost && <span>💰 ฿{Number(s.shipping_cost).toLocaleString()}</span>}
-                    </div>
-                    {s.tracking_number && (
-                      <div style={{ background:"#f8fafc", borderRadius:8, padding:"6px 10px", marginBottom:8, display:"flex", alignItems:"center", gap:8 }}>
-                        <span style={{ fontSize:11, color:C.muted, fontWeight:600 }}>Tracking:</span>
-                        <span style={{ fontSize:12, fontWeight:800, color:C.primary, fontFamily:"monospace" }}>{s.tracking_number}</span>
-                        <span style={{ marginLeft:"auto", fontSize:11, color:C.sky, fontWeight:700, cursor:"pointer" }} onClick={()=>navigator.clipboard?.writeText(s.tracking_number)}>Copy</span>
-                      </div>
-                    )}
-                    <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                      {s.status === "in_transit" && (
-                        <>
-                          <button style={{ background:`linear-gradient(135deg,${C.green},#16a34a)`, color:"white", border:"none", borderRadius:8, padding:"5px 12px", fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>
-                            ✅ Confirm Received
-                          </button>
-                          <button style={{ background:"#fee2e2", color:C.red, border:"none", borderRadius:8, padding:"5px 12px", fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>
-                            🚨 File Claim
-                          </button>
-                        </>
-                      )}
-                      {s.status === "delivered" && (
-                        <span style={{ fontSize:11, color:C.muted, fontStyle:"italic" }}>Delivered — no action needed</span>
-                      )}
+                    <div style={{ fontSize:11, color:C.muted, marginTop:2 }}>
+                      📦 {parcelCount} parcel{parcelCount>1?"s":""} · ⚖️ {Number(s.total_weight || 0).toFixed(2)} kg · 📅 {s.created_at ? new Date(s.created_at).toLocaleDateString() : "—"}
                     </div>
                   </div>
-                </div>
-              </Card>
-            ))}
+                  <StatusBadge map={SHIP_STATUS} key_={s.status}/>
+                  <span style={{ fontSize:16, color:C.muted, marginLeft:4 }}>›</span>
+                </button>
+              );
+            })}
           </div>
         </>
       )}
+
+      <ShipmentDetailModal
+        shipment={detail}
+        onClose={() => setDetail(null)}
+        onOpenPhoto={(photos, index) => setLightbox({ photos, index })}
+      />
+      <PhotoLightbox lightbox={lightbox} onClose={() => setLightbox(null)} onNav={(dir) => setLightbox(lb => lb && ({ ...lb, index: (lb.index + dir + lb.photos.length) % lb.photos.length }))}/>
     </div>
   );
 }
 
-function TabPayments({ payments, loading }) {
+// ── Shipment Detail Modal (SM) ────────────────────────────────────────
+function ShipmentDetailModal({ shipment, onClose, onOpenPhoto }) {
+  useEffect(() => {
+    if (!shipment) return;
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [shipment, onClose]);
+
+  if (!shipment) return null;
+  const parcels = shipment.parcels_list || [];
+
+  return (
+    <div onClick={onClose}
+      style={{
+        position:"fixed", inset:0, background:"rgba(0,0,0,0.6)",
+        zIndex:9000, display:"flex", alignItems:"center", justifyContent:"center",
+        padding:20, animation:"sdmFadeIn 0.2s ease",
+      }}>
+      <style>{`
+        @keyframes sdmFadeIn{from{opacity:0}to{opacity:1}}
+        @keyframes sdmPopIn{from{transform:scale(0.94);opacity:0}to{transform:scale(1);opacity:1}}
+      `}</style>
+      <div onClick={e=>e.stopPropagation()}
+        style={{
+          background:"white", borderRadius:18, width:"100%", maxWidth:560,
+          maxHeight:"90vh", display:"flex", flexDirection:"column",
+          boxShadow:"0 20px 60px rgba(0,0,0,0.3)",
+          animation:"sdmPopIn 0.25s cubic-bezier(0.34,1.56,0.64,1)",
+          overflow:"hidden",
+        }}>
+        {/* Header */}
+        <div style={{ background:`linear-gradient(135deg,${C.primary},${C.sky})`, color:"white", padding:"18px 22px", display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10 }}>
+          <div>
+            <div style={{ fontSize:11, opacity:0.85, marginBottom:2, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>Shipment</div>
+            <div style={{ fontSize:18, fontWeight:900, fontFamily:"monospace" }}>
+              {shipment.doc_no || shipment.id?.slice(0,8)}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background:"rgba(255,255,255,0.2)", color:"white", border:"none", width:34, height:34, borderRadius:"50%", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex:1, overflowY:"auto", padding:"18px 22px" }}>
+          {/* Stats */}
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
+            {[
+              { label:"Parcels", value:parcels.length, icon:"📦" },
+              { label:"Weight",  value:`${Number(shipment.total_weight||0).toFixed(2)} kg`, icon:"⚖️" },
+              { label:"Status",  value:shipment.status, icon:"📊" },
+            ].map(s => (
+              <div key={s.label} style={{ background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:10, padding:"10px 8px", textAlign:"center" }}>
+                <div style={{ fontSize:16 }}>{s.icon}</div>
+                <div style={{ fontSize:13, fontWeight:900, color:C.text, marginTop:2 }}>{s.value}</div>
+                <div style={{ fontSize:9, color:C.muted, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", marginTop:1 }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Customer note */}
+          {shipment.customer_note && (
+            <div style={{ background:"#EFF6FF", border:"1px solid #bfdbfe", borderRadius:10, padding:"10px 12px", fontSize:12, color:C.primary, marginBottom:14, lineHeight:1.6 }}>
+              💬 <strong>Your note:</strong> {shipment.customer_note}
+            </div>
+          )}
+
+          {/* Parcels */}
+          <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.06em" }}>
+            Parcels in this shipment
+          </div>
+          {parcels.length === 0 ? (
+            <div style={{ fontSize:12, color:C.muted, fontStyle:"italic", padding:"20px 0", textAlign:"center" }}>No parcels linked.</div>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+              {parcels.map(p => {
+                const items  = p.parcel_items  || [];
+                const photos = p.parcel_photos || [];
+                const weight = items.reduce((sum, i) => sum + (Number(i.weight) || 0) * (Number(i.qty) || 1), 0);
+                const photoUrls = photos.map(ph => ph.url);
+                return (
+                  <div key={p.id} style={{ background:"white", border:`1px solid ${C.border}`, borderRadius:10, padding:"12px 14px" }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:photos.length>0?8:0 }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:13, fontWeight:800, color:C.text }}>📦 {p.item_desc || "Parcel"}</div>
+                        <div style={{ fontSize:11, color:C.muted, marginTop:3, lineHeight:1.5 }}>
+                          🔢 {p.domestic_tracking || "—"}
+                          <br/>⚖️ {weight.toFixed(2)} kg
+                          {p.arrived_at && <><br/>📅 Arrived {new Date(p.arrived_at).toLocaleDateString()}</>}
+                        </div>
+                      </div>
+                      <StatusBadge map={PARCEL_STATUS} key_={p.status}/>
+                    </div>
+                    {/* Photos */}
+                    {photos.length > 0 && (
+                      <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                        {photos.slice(0, 6).map((ph, i) => (
+                          <button key={i} onClick={() => onOpenPhoto(photoUrls, i)}
+                            style={{ width:56, height:56, borderRadius:8, overflow:"hidden", border:`1px solid ${C.border}`, padding:0, cursor:"pointer", background:"transparent", position:"relative", flexShrink:0 }}>
+                            <img src={ph.url} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
+                            {i === 5 && photos.length > 6 && (
+                              <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.6)", color:"white", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:800 }}>
+                                +{photos.length - 6}
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ borderTop:"1px solid #e2e8f0", padding:"12px 22px", background:"#f8fafc", display:"flex", justifyContent:"flex-end" }}>
+          <button onClick={onClose}
+            style={{ background:`linear-gradient(135deg,${C.primary},${C.sky})`, color:"white", border:"none", borderRadius:10, padding:"9px 20px", fontSize:13, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TabPayments({ payments, loading, onPay }) {
   if (loading) return <LoadingState/>;
   if (!payments || payments.length === 0) {
     return <EmptyState icon="💳" title="No payments yet" hint="Your payment history will show up here after your first order or shipment."/>;
   }
 
-  const outstanding = payments.filter(p => p.status === "pending_slip");
-  const totalDue = outstanding.reduce((s, p) => s + Number(p.amount_thb || p.amount || 0), 0);
+  const outstanding = payments.filter(p => p.status === "unpaid");
+  const totalDue = outstanding.reduce((s, p) => s + Number(p.amount || 0), 0);
+
+  const statusColors = {
+    unpaid:           { bg:"#fef9c3", color:"#854d0e", icon:"⏳" },
+    pending_approval: { bg:"#dbeafe", color:"#1e40af", icon:"🔍" },
+    approved:         { bg:"#d1fae5", color:"#065f46", icon:"✓"  },
+    paid:             { bg:"#d1fae5", color:"#065f46", icon:"✅" },
+    rejected:         { bg:"#fee2e2", color:"#991b1b", icon:"❌" },
+    waived:           { bg:"#e0e7ff", color:"#3730a3", icon:"〰️" },
+  };
 
   return (
     <div>
@@ -438,7 +648,7 @@ function TabPayments({ payments, loading }) {
           <span style={{ fontSize:24 }}>⚠️</span>
           <div style={{ flex:1 }}>
             <div style={{ fontSize:13, fontWeight:800, color:"#854d0e" }}>Outstanding Payment</div>
-            <div style={{ fontSize:12, color:"#a16207", marginTop:2 }}>{outstanding.length} payment{outstanding.length>1?"s":""} pending · Total ฿{totalDue.toLocaleString()}</div>
+            <div style={{ fontSize:12, color:"#a16207", marginTop:2 }}>{outstanding.length} item{outstanding.length>1?"s":""} pending · Total ฿{totalDue.toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 })}</div>
           </div>
         </div>
       )}
@@ -447,45 +657,206 @@ function TabPayments({ payments, loading }) {
 
       <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
         {payments.map(p => {
-          const amount = Number(p.amount_thb || p.amount || 0);
-          const type = p.source_type || p.type || "payment";
-          const ref = p.source_ref || p.ref || "";
+          const amount = Number(p.amount || 0);
+          const sc = statusColors[p.status] || { bg:"#f1f5f9", color:"#64748b", icon:"•" };
+          const ctx = parseContext(p.context);
           return (
-          <Card key={p.id}>
-            <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-              <div style={{ width:44, height:44, borderRadius:10, background:"linear-gradient(135deg,#EFF6FF,#DBEAFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>
-                {type === "shipping" ? "✈️" : "🛒"}
-              </div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, marginBottom:3, flexWrap:"wrap" }}>
-                  <div style={{ fontSize:13, fontWeight:800, color:C.text }}>{ref || "Payment"}</div>
-                  <StatusBadge map={PAY_STATUS} key_={p.status}/>
+            <Card key={p.id}>
+              <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                <div style={{ width:44, height:44, borderRadius:10, background:"linear-gradient(135deg,#EFF6FF,#DBEAFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>
+                  {p.type === "shipping" ? "✈️" : p.type === "subscription" ? "🎫" : "💰"}
                 </div>
-                <div style={{ display:"flex", gap:12, fontSize:11, color:C.muted, marginBottom:p.status==="pending_slip"?8:0 }}>
-                  <span>💰 ฿{amount.toLocaleString()}</span>
-                  <span>📅 {p.created_at ? new Date(p.created_at).toLocaleDateString() : "—"}</span>
-                  <span style={{ textTransform:"capitalize" }}>{type}</span>
-                </div>
-                {p.status === "pending_slip" && (
-                  <div style={{ display:"flex", gap:6 }}>
-                    <label style={{ background:`linear-gradient(135deg,${C.primary},${C.sky})`, color:"white", borderRadius:8, padding:"6px 14px", fontSize:12, fontWeight:800, cursor:"pointer", display:"inline-block" }}>
-                      📎 Upload Slip
-                      <input type="file" accept="image/*" style={{ display:"none" }}/>
-                    </label>
-                    <label style={{ background:"#f1f5f9", color:C.muted, borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:700, cursor:"pointer", display:"inline-block" }}>
-                      📷 Camera
-                      <input type="file" accept="image/*" capture="environment" style={{ display:"none" }}/>
-                    </label>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, marginBottom:3, flexWrap:"wrap" }}>
+                    <div style={{ fontSize:13, fontWeight:800, color:C.text }}>{p.item_desc || "Payment"}</div>
+                    <span style={{ background:sc.bg, color:sc.color, fontSize:10, fontWeight:800, padding:"3px 9px", borderRadius:20, whiteSpace:"nowrap" }}>
+                      {sc.icon} {p.status}
+                    </span>
                   </div>
-                )}
+                  <div style={{ display:"flex", gap:12, fontSize:11, color:C.muted, marginBottom:8, flexWrap:"wrap" }}>
+                    <span style={{ fontWeight:900, color:p.status==="unpaid"?"#dc2626":C.muted }}>฿{amount.toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 })}</span>
+                    <span>📅 {p.created_at ? new Date(p.created_at).toLocaleDateString() : "—"}</span>
+                    {ctx?.carrier && <span>🚚 {ctx.carrier}</span>}
+                    {ctx?.intl_tracking && <span style={{ fontFamily:"monospace" }}>🔢 {ctx.intl_tracking}</span>}
+                  </div>
+                  {p.status === "unpaid" && (
+                    <button onClick={() => onPay(p)}
+                      style={{ background:`linear-gradient(135deg,${C.primary},${C.sky})`, color:"white", border:"none", borderRadius:8, padding:"6px 16px", fontSize:12, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>
+                      💳 Pay Now
+                    </button>
+                  )}
+                  {p.status === "pending_approval" && (
+                    <div style={{ fontSize:11, color:"#1e40af", background:"#dbeafe", borderRadius:8, padding:"6px 10px", display:"inline-block" }}>
+                      🔍 Slip uploaded — waiting for staff approval
+                    </div>
+                  )}
+                  {p.status === "rejected" && p.rejection_note && (
+                    <div style={{ fontSize:11, color:"#991b1b", background:"#fee2e2", borderRadius:8, padding:"6px 10px", marginTop:4 }}>
+                      ❌ <strong>Rejected:</strong> {p.rejection_note}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          </Card>
-        );})}
+            </Card>
+          );
+        })}
       </div>
     </div>
   );
 }
+
+// Helper: parse JSON context safely
+function parseContext(ctx) {
+  if (!ctx) return null;
+  try { return typeof ctx === "string" ? JSON.parse(ctx) : ctx; } catch { return null; }
+}
+
+// ── Pay Box Modal (SM uploads slip OR shows PromptPay QR) ──────────────
+function PayBoxModal({ payment, loading, result, onClose, onUploadSlip }) {
+  const [method, setMethod] = useState("slip");   // 'slip' | 'promptpay'
+  const [file, setFile]     = useState(null);
+  const [preview, setPreview] = useState(null);
+
+  useEffect(() => {
+    if (payment) {
+      setMethod("slip"); setFile(null); setPreview(null);
+    }
+  }, [payment?.id]);
+
+  if (!payment) return null;
+
+  const amount = Number(payment.amount || 0);
+  const ctx = parseContext(payment.context);
+
+  const onFile = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f);
+    try {
+      if (typeof URL !== "undefined" && URL.createObjectURL) {
+        setPreview(URL.createObjectURL(f));
+      } else {
+        // Fallback: FileReader for older browsers
+        const reader = new FileReader();
+        reader.onloadend = () => setPreview(reader.result);
+        reader.readAsDataURL(f);
+      }
+    } catch (err) {
+      console.warn("preview generation failed:", err);
+    }
+  };
+
+  // Build a simple PromptPay QR string (just for display; manual confirm)
+  // Note: This is a placeholder text; real PromptPay payload requires CRC.
+  const ppNumber = "0812345678";  // TODO: replace with CartMates real PromptPay number
+
+  return (
+    <div onClick={() => !loading && onClose()}
+      style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", zIndex:9000, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+      <div onClick={e=>e.stopPropagation()}
+        style={{ background:"white", borderRadius:18, width:"100%", maxWidth:480, maxHeight:"92vh", display:"flex", flexDirection:"column", boxShadow:"0 20px 60px rgba(0,0,0,0.3)", overflow:"hidden", fontFamily:"'Nunito',sans-serif" }}>
+
+        {/* Header */}
+        <div style={{ background:`linear-gradient(135deg,${C.primary},${C.sky})`, color:"white", padding:"18px 22px", display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10 }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:11, opacity:0.85, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>Pay</div>
+            <div style={{ fontSize:15, fontWeight:900, marginTop:2, lineHeight:1.3 }}>{payment.item_desc}</div>
+            <div style={{ fontSize:22, fontWeight:900, marginTop:6 }}>฿{amount.toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 })}</div>
+          </div>
+          <button onClick={() => !loading && onClose()} disabled={loading} style={{ background:"rgba(255,255,255,0.2)", color:"white", border:"none", width:32, height:32, borderRadius:"50%", fontSize:14, cursor:loading?"not-allowed":"pointer" }}>✕</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex:1, overflowY:"auto", padding:"16px 22px" }}>
+          {result ? (
+            <div style={{ textAlign:"center", padding:"30px 10px" }}>
+              <div style={{ fontSize:52, marginBottom:12 }}>{result.success ? "🎉" : "⚠️"}</div>
+              <div style={{ fontSize:18, fontWeight:900, color:result.success?C.primary:"#dc2626", marginBottom:10 }}>
+                {result.success ? "Payment Submitted!" : "Failed"}
+              </div>
+              <div style={{ fontSize:12, color:C.muted, lineHeight:1.7 }}>{result.message}</div>
+            </div>
+          ) : (
+            <>
+              {/* Method tabs */}
+              <div style={{ display:"flex", gap:6, marginBottom:14 }}>
+                <button onClick={()=>setMethod("slip")}
+                  style={{ flex:1, padding:"10px", border:`1.5px solid ${method==="slip"?C.primary:"#e2e8f0"}`, background:method==="slip"?"#EFF6FF":"white", color:method==="slip"?C.primary:C.muted, borderRadius:10, fontSize:12, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>
+                  📎 Bank Transfer Slip
+                </button>
+                <button onClick={()=>setMethod("promptpay")}
+                  style={{ flex:1, padding:"10px", border:`1.5px solid ${method==="promptpay"?C.primary:"#e2e8f0"}`, background:method==="promptpay"?"#EFF6FF":"white", color:method==="promptpay"?C.primary:C.muted, borderRadius:10, fontSize:12, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>
+                  📱 PromptPay
+                </button>
+              </div>
+
+              {method === "promptpay" && (
+                <div style={{ textAlign:"center", padding:"10px 0 16px" }}>
+                  <div style={{ display:"inline-flex", flexDirection:"column", alignItems:"center", background:"#fafbfc", border:"1.5px solid #e2e8f0", borderRadius:14, padding:16 }}>
+                    <div style={{ fontSize:11, color:C.muted, marginBottom:8, fontWeight:700 }}>📱 Scan with banking app</div>
+                    {/* Simple QR placeholder using google chart API */}
+                    <img alt="PromptPay QR"
+                      src={`https://chart.googleapis.com/chart?cht=qr&chs=200x200&chl=${encodeURIComponent(`promptpay://${ppNumber}?amount=${amount}`)}`}
+                      style={{ width:180, height:180, borderRadius:8, background:"white", border:"1px solid #e2e8f0" }}/>
+                    <div style={{ fontSize:11, color:C.text, marginTop:10, fontFamily:"monospace", fontWeight:700 }}>{ppNumber}</div>
+                    <div style={{ fontSize:10, color:C.muted, marginTop:2 }}>CARTMATES CO., LTD.</div>
+                  </div>
+                  <div style={{ fontSize:11, color:C.muted, marginTop:14, lineHeight:1.6 }}>
+                    After paying, please upload the confirmation slip below for verification.
+                  </div>
+                </div>
+              )}
+
+              {/* Slip upload — shown for both methods */}
+              <div style={{ fontSize:11, fontWeight:800, color:C.muted, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.06em" }}>
+                {method === "slip" ? "Payment Slip" : "Confirmation Slip"}
+              </div>
+
+              {preview ? (
+                <div style={{ position:"relative", marginBottom:12 }}>
+                  <img src={preview} alt="" style={{ width:"100%", borderRadius:10, border:`1.5px solid ${C.border}` }}/>
+                  <button onClick={() => { setFile(null); setPreview(null); }}
+                    style={{ position:"absolute", top:8, right:8, background:"rgba(0,0,0,0.6)", color:"white", border:"none", width:28, height:28, borderRadius:"50%", fontSize:12, cursor:"pointer" }}>✕</button>
+                </div>
+              ) : (
+                <div style={{ display:"flex", gap:6, marginBottom:12 }}>
+                  <label style={{ flex:1, background:`linear-gradient(135deg,${C.primary},${C.sky})`, color:"white", borderRadius:10, padding:"12px", fontSize:13, fontWeight:800, cursor:"pointer", textAlign:"center" }}>
+                    📎 Choose Image
+                    <input type="file" accept="image/*" onChange={onFile} style={{ display:"none" }}/>
+                  </label>
+                  <label style={{ flex:1, background:"#f1f5f9", color:C.text, borderRadius:10, padding:"12px", fontSize:13, fontWeight:800, cursor:"pointer", textAlign:"center" }}>
+                    📷 Camera
+                    <input type="file" accept="image/*" capture="environment" onChange={onFile} style={{ display:"none" }}/>
+                  </label>
+                </div>
+              )}
+
+              <div style={{ background:"#fef9c3", border:"1px solid #fde047", borderRadius:10, padding:"10px 12px", fontSize:11, color:"#854d0e", lineHeight:1.6 }}>
+                💡 After upload, your payment will be reviewed by staff. You'll be notified once approved.
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ borderTop:`1px solid ${C.border}`, padding:"12px 22px", background:"#f8fafc", display:"flex", gap:8 }}>
+          {result ? (
+            <button onClick={onClose} style={{ flex:1, padding:11, background:`linear-gradient(135deg,${C.primary},${C.sky})`, color:"white", border:"none", borderRadius:10, fontSize:13, fontWeight:900, cursor:"pointer", fontFamily:"inherit" }}>Got it</button>
+          ) : (
+            <>
+              <button onClick={onClose} disabled={loading} style={{ flex:1, padding:11, background:"#f1f5f9", color:C.muted, border:"none", borderRadius:10, fontSize:12, fontWeight:800, cursor:loading?"not-allowed":"pointer", fontFamily:"inherit" }}>Cancel</button>
+              <button onClick={() => onUploadSlip(file, method)} disabled={loading || !file}
+                style={{ flex:2, padding:11, background:(loading || !file)?"#94a3b8":`linear-gradient(135deg,${C.primary},${C.sky})`, color:"white", border:"none", borderRadius:10, fontSize:12, fontWeight:900, cursor:(loading || !file)?"not-allowed":"pointer", fontFamily:"inherit" }}>
+                {loading ? "Submitting..." : "Submit Payment 💳"}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function TabProfile({ profile, loading }) {
   const [copied, setCopied] = useState(false);
@@ -591,6 +962,16 @@ export default function SoulMatesPanel({ user, onLogout, cartCount = 0, onOpenCa
   const [payments, setPayments] = useState([]);
   const [loading, setLoading]   = useState(true);
 
+  // ── Shipment request modal state ──
+  const [shipReqModal, setShipReqModal] = useState(null);  // { parcelIds: [...] } | null
+  const [shipReqLoading, setShipReqLoading] = useState(false);
+  const [shipReqResult, setShipReqResult] = useState(null);  // { success: bool, message: str }
+
+  // ── Pay box modal state ──
+  const [payModal, setPayModal] = useState(null);  // selected payment row
+  const [payLoading, setPayLoading] = useState(false);
+  const [payResult, setPayResult] = useState(null);
+
   // ── Fetcher ──────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
     if (!user?.id) { setLoading(false); return; }
@@ -683,45 +1064,40 @@ export default function SoulMatesPanel({ user, onLogout, cartCount = 0, onOpenCa
       }
 
       // Shipments — joined via shipment_boxes.member_id pattern
-      // Note: this assumes shipments table has member_id; adjust if your schema
-      // links shipments via shipment_boxes only.
+      // Shipments with parcels embedded
       const { data: sh } = await supabase
         .from("shipments")
-        .select("id, doc_no, status, tracking_number, carrier, total_weight_kg, shipping_cost, destination, created_at")
+        .select(`
+          *,
+          parcels(id, item_desc, domestic_tracking, status, arrived_at,
+                  parcel_items(weight, width, length, height, qty),
+                  parcel_photos(url, type))
+        `)
         .eq("member_id", user.id)
         .order("created_at", { ascending: false });
 
-      setShipments((sh || []).map(s => ({
-        ...s,
-        total_weight: s.total_weight_kg,
-      })));
+      // Normalize: roll up parcels list + total weight
+      setShipments((sh || []).map(s => {
+        const parcelsList = s.parcels || [];
+        const totalWeight = parcelsList.reduce((sum, p) => {
+          const items = p.parcel_items || [];
+          return sum + items.reduce((ss, i) => ss + (Number(i.weight) || 0) * (Number(i.qty) || 1), 0);
+        }, 0);
+        return {
+          ...s,
+          parcels_list: parcelsList,
+          total_weight: totalWeight,
+        };
+      }));
 
-      // Payments — combine traditional payments + marketplace_payments
-      const [{ data: traditional }, { data: mpPay }] = await Promise.all([
-        supabase.from("payments")
-          .select("id, amount_thb, status, created_at, source_type, source_ref")
-          .eq("member_id", user.id)
-          .order("created_at", { ascending: false }),
-        supabase.from("marketplace_payments")
-          .select("id, amount_thb, status, created_at, method, order_id")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false }),
-      ]);
+      // Payments — fetch from `payments` table with proper columns
+      const { data: paymentsData } = await supabase
+        .from("payments")
+        .select("id, type, item_desc, amount, status, slip_url, slip_uploaded_at, approved_at, rejection_note, rejected_at, paid_at, context, created_at")
+        .eq("member_id", user.id)
+        .order("created_at", { ascending: false });
 
-      // Normalize and merge
-      const merged = [
-        ...(traditional || []).map(p => ({
-          ...p,
-          source_type: p.source_type || "shipping",
-        })),
-        ...(mpPay || []).map(p => ({
-          ...p,
-          source_type: "marketplace",
-          source_ref:  p.order_id,  // could enrich with order_no via join later
-        })),
-      ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-      setPayments(merged);
+      setPayments(paymentsData || []);
 
     } catch (err) {
       console.error("SoulMatesPanel fetch error:", err);
@@ -892,10 +1268,10 @@ export default function SoulMatesPanel({ user, onLogout, cartCount = 0, onOpenCa
 
             {/* Tab content */}
             <div style={{ flex:1, overflowY:"auto", padding:"20px 24px" }}>
-              {activeTab === "parcels"   && <TabParcels   parcels={parcels}   profile={profile} loading={loading}/>}
+              {activeTab === "parcels"   && <TabParcels   parcels={parcels}   profile={profile} loading={loading} onRequestShipment={(ids) => setShipReqModal({ parcelIds: ids })}/>}
               {activeTab === "orders"    && <TabOrders    orders={orders}     loading={loading}/>}
               {activeTab === "shipments" && <TabShipments shipments={shipments} loading={loading}/>}
-              {activeTab === "payments"  && <TabPayments  payments={payments} loading={loading}/>}
+              {activeTab === "payments"  && <TabPayments  payments={payments} loading={loading} onPay={(p)=>{ setPayModal(p); setPayResult(null); }}/>}
               {activeTab === "profile"   && <TabProfile   profile={profile}   loading={loading}/>}
             </div>
 
@@ -907,13 +1283,178 @@ export default function SoulMatesPanel({ user, onLogout, cartCount = 0, onOpenCa
                   ← Back to Shop
                 </button>
                 <button onClick={()=>setActiveTab("shipments")} style={{ background:`linear-gradient(135deg,${C.primary},${C.sky})`, color:"white", border:"none", borderRadius:10, padding:"9px 20px", fontSize:13, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>
-                  Request Shipment ✈️
+                  View Shipments ✈️
                 </button>
               </div>
             </div>
           </div>
         </>
       )}
+
+      {/* Request Shipment Modal */}
+      <RequestShipmentModal
+        modal={shipReqModal}
+        parcels={parcels}
+        loading={shipReqLoading}
+        result={shipReqResult}
+        onClose={() => { setShipReqModal(null); setShipReqResult(null); }}
+        onConfirm={async (note) => {
+          console.log("🚀 [Ship] Confirm clicked, modal:", shipReqModal);
+          if (!shipReqModal) {
+            console.warn("⚠️ [Ship] No modal — aborting");
+            return;
+          }
+          setShipReqLoading(true);
+          try {
+            console.log("🚀 [Ship] Calling fn_request_shipment with:", {
+              p_parcel_ids: shipReqModal.parcelIds,
+              p_note: note,
+            });
+            const { data, error } = await supabase.rpc("fn_request_shipment", {
+              p_parcel_ids: shipReqModal.parcelIds,
+              p_address_id: null,
+              p_note:       note || null,
+            });
+            console.log("🚀 [Ship] RPC response:", { data, error });
+            if (error) {
+              console.error("❌ [Ship] RPC error:", error);
+              setShipReqResult({ success: false, message: error.message });
+            } else {
+              console.log("✅ [Ship] Success — shipment_id:", data);
+              setShipReqResult({ success: true, message: "Shipment requested! Our staff will start packing soon." });
+              await fetchAll();
+            }
+          } catch (e) {
+            console.error("❌ [Ship] Exception:", e);
+            setShipReqResult({ success: false, message: e.message || "Network error" });
+          } finally {
+            setShipReqLoading(false);
+          }
+        }}
+      />
+
+      {/* Pay Box Modal */}
+      <PayBoxModal
+        payment={payModal}
+        loading={payLoading}
+        result={payResult}
+        onClose={() => { setPayModal(null); setPayResult(null); }}
+        onUploadSlip={async (file, method) => {
+          if (!payModal || !file) return;
+          setPayLoading(true);
+          try {
+            // Upload to payment-slips bucket
+            const ext = (file.name || "slip").split(".").pop()?.toLowerCase() || "jpg";
+            const path = `${user.id}/${payModal.id}/${Date.now()}.${ext}`;
+            const { error: upErr } = await supabase.storage
+              .from("payment-slips")
+              .upload(path, file, { cacheControl: "3600", upsert: false });
+            if (upErr) throw upErr;
+
+            const { data: pub } = supabase.storage.from("payment-slips").getPublicUrl(path);
+            const slipUrl = pub?.publicUrl;
+            if (!slipUrl) throw new Error("Failed to get slip URL");
+
+            // Call RPC
+            const { error: rpcErr } = await supabase.rpc("fn_pay_box", {
+              p_payment_id: payModal.id,
+              p_slip_url:   slipUrl,
+              p_method:     method,
+            });
+            if (rpcErr) throw rpcErr;
+
+            setPayResult({ success: true, message: "Your payment has been submitted. Our staff will review and approve it shortly." });
+            await fetchAll();
+          } catch (e) {
+            console.error("pay box error:", e);
+            setPayResult({ success: false, message: e.message || "Failed to submit payment" });
+          } finally {
+            setPayLoading(false);
+          }
+        }}
+      />
     </>
+  );
+}
+
+// ── Request Shipment Modal ────────────────────────────────────────────────
+function RequestShipmentModal({ modal, parcels, loading, result, onClose, onConfirm }) {
+  const [note, setNote] = useState("");
+  useEffect(() => { if (modal) setNote(""); }, [modal]);
+  if (!modal) return null;
+
+  const selectedParcels = (parcels || []).filter(p => modal.parcelIds.includes(p.id));
+  const totalWeight = selectedParcels.reduce((s,p) => s + (Number(p.weight_kg) || 0), 0);
+
+  return (
+    <div onClick={() => !loading && onClose()}
+      style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:9998, display:"flex", alignItems:"center", justifyContent:"center", padding:20, animation:"rsFadeIn 0.2s ease", fontFamily:"'Nunito',sans-serif" }}>
+      <style>{`@keyframes rsFadeIn{from{opacity:0}to{opacity:1}}`}</style>
+      <div onClick={e=>e.stopPropagation()}
+        style={{ background:"white", borderRadius:18, padding:24, maxWidth:480, width:"100%", boxShadow:"0 24px 64px rgba(0,0,0,0.3)", maxHeight:"90vh", overflow:"auto" }}>
+
+        {result ? (
+          /* ── Result screen ── */
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontSize:52, marginBottom:12 }}>{result.success ? "🎉" : "⚠️"}</div>
+            <div style={{ fontSize:19, fontWeight:900, color:result.success?"#075BB0":"#dc2626", marginBottom:10 }}>
+              {result.success ? "Shipment Requested!" : "Could not submit"}
+            </div>
+            <div style={{ fontSize:13, color:"#475569", lineHeight:1.7, marginBottom:22 }}>{result.message}</div>
+            <button onClick={onClose} style={{ width:"100%", padding:12, background:"linear-gradient(135deg,#075BB0,#0484CF)", color:"white", border:"none", borderRadius:12, fontSize:14, fontWeight:900, cursor:"pointer", fontFamily:"inherit" }}>
+              Got it
+            </button>
+          </div>
+        ) : (
+          /* ── Confirmation form ── */
+          <>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+              <div style={{ fontSize:18, fontWeight:900, color:"#075BB0" }}>✈️ Request Shipment</div>
+              <button onClick={onClose} disabled={loading} style={{ background:"transparent", border:"none", fontSize:20, cursor:loading?"not-allowed":"pointer", color:"#94a3b8" }}>✕</button>
+            </div>
+
+            <div style={{ fontSize:13, color:"#475569", marginBottom:12, lineHeight:1.6 }}>
+              You're about to request shipment for <strong>{selectedParcels.length} parcel{selectedParcels.length>1?"s":""}</strong> (total <strong>{totalWeight.toFixed(2)} kg</strong>).
+            </div>
+
+            {/* Parcel list */}
+            <div style={{ background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:10, padding:"10px 12px", marginBottom:14, maxHeight:160, overflow:"auto" }}>
+              {selectedParcels.map(p => (
+                <div key={p.id} style={{ display:"flex", justifyContent:"space-between", fontSize:12, padding:"6px 0", borderBottom:"1px dashed #e2e8f0" }}>
+                  <span style={{ color:"#0F172A", fontWeight:700 }}>📦 {p.item_desc || "Parcel"}</span>
+                  <span style={{ color:"#64748b" }}>{p.weight_kg ? `${Number(p.weight_kg).toFixed(2)} kg` : "—"}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Note */}
+            <label style={{ display:"block", fontSize:11, fontWeight:800, color:"#64748b", marginBottom:6, textTransform:"uppercase", letterSpacing:"0.06em" }}>
+              Special note for staff (optional)
+            </label>
+            <textarea
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              placeholder="e.g. consolidate into 2 boxes, fragile, etc."
+              rows={3}
+              style={{ width:"100%", border:"1.5px solid #e2e8f0", borderRadius:10, padding:"10px 12px", fontSize:13, resize:"vertical", fontFamily:"inherit", marginBottom:14, boxSizing:"border-box" }}
+            />
+
+            {/* Info */}
+            <div style={{ background:"#fef9c3", border:"1px solid #fde047", borderRadius:10, padding:"10px 12px", fontSize:11.5, color:"#854d0e", lineHeight:1.6, marginBottom:18 }}>
+              💡 Our staff will pack and weigh your parcels, then send you the final shipping cost. You can pay and confirm before we ship.
+            </div>
+
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={onClose} disabled={loading} style={{ flex:1, padding:12, background:"#f1f5f9", color:"#64748b", border:"none", borderRadius:12, fontSize:13, fontWeight:800, cursor:loading?"not-allowed":"pointer", fontFamily:"inherit" }}>
+                Cancel
+              </button>
+              <button onClick={() => onConfirm(note)} disabled={loading} style={{ flex:2, padding:12, background:loading?"#94a3b8":"linear-gradient(135deg,#075BB0,#0484CF)", color:"white", border:"none", borderRadius:12, fontSize:13, fontWeight:900, cursor:loading?"not-allowed":"pointer", fontFamily:"inherit" }}>
+                {loading ? "Submitting..." : "Confirm Request ✈️"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
