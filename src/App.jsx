@@ -3,6 +3,7 @@ import { supabase, getActiveSession } from "./supabaseClient";
 import LandingPage        from "./LandingPage";
 import LoginPage          from "./LoginPage";
 import RegisterPage       from "./RegisterPage";
+import ResetPasswordPage  from "./ResetPasswordPage";
 import PlanSelector       from "./PlanSelector";
 import CartMatesDashboard from "./CartMatesDashboard_v9";
 import StaffDashboard     from "./StaffDashboard_v5";
@@ -48,9 +49,21 @@ export default function App() {
 
     // Detect email verification redirect (?verified=1) from Supabase
     const isVerifyReturn = window.location.search.includes("verified=1");
+    // Detect password reset redirect (?reset=1) from Supabase
+    const isResetReturn  = window.location.search.includes("reset=1");
     // (statusMessage will be set inside bootstrap based on success/failure of profile creation)
 
     const bootstrap = async () => {
+      // Password reset flow takes priority — Supabase auto-signs the user in via recovery token
+      if (isResetReturn) {
+        console.log("🔐 Password reset return detected");
+        if (mounted) {
+          setBooting(false);
+          setPage("reset_password");
+        }
+        return;
+      }
+
       // If user just verified email, Supabase may have auto-signed them in.
       // We need to: (1) create their profile using pending form data, then
       // (2) sign them out so they go through manual login.
@@ -104,11 +117,22 @@ export default function App() {
 
                   if (regError) {
                     console.error("❌ fn_register_customer failed on verify:", regError);
-                    setStatusMessage({
-                      icon:  "⚠️",
-                      title: "Profile setup incomplete",
-                      body:  `Your email is verified but profile creation failed: ${regError.message}. Please contact support.`,
-                    });
+
+                    // Special handling for username collision (race condition)
+                    const msg = (regError.message || "").toLowerCase();
+                    if (msg.includes("duplicate") || msg.includes("unique") || msg.includes("username")) {
+                      setStatusMessage({
+                        icon:  "⚠️",
+                        title: "Username unavailable",
+                        body:  "Sorry, the username you chose was taken by another user while you were verifying your email. Please contact support to choose a new username — your account is verified.",
+                      });
+                    } else {
+                      setStatusMessage({
+                        icon:  "⚠️",
+                        title: "Profile setup incomplete",
+                        body:  `Your email is verified but profile creation failed: ${regError.message}. Please contact support.`,
+                      });
+                    }
                   } else {
                     console.log("✅ Profile created successfully");
                     localStorage.removeItem("cm_pending_register");
@@ -305,6 +329,13 @@ export default function App() {
         onLogin={handleLogin}
         onRegister={() => setPage("plan_choice")}
         onBack={() => setPage("landing")}
+      />
+    );
+  }
+  else if (page === "reset_password") {
+    view = (
+      <ResetPasswordPage
+        onDone={() => setPage("login")}
       />
     );
   }

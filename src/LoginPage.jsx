@@ -14,6 +14,7 @@ export default function LoginPage({ onLogin, onRegister, onBack }) {
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState("");
   const [isMobile, setIsMobile]         = useState(false);
+  const [showForgot, setShowForgot]     = useState(false);
 
   // ── Responsive detection ────────────────────────────────────────
   useEffect(() => {
@@ -170,7 +171,7 @@ export default function LoginPage({ onLogin, onRegister, onBack }) {
             <div style={shared.fieldGroup}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <label style={shared.label}>PASSWORD</label>
-                <a href="#" style={shared.forgotLink} onClick={(e) => e.preventDefault()}>
+                <a href="#" style={shared.forgotLink} onClick={(e) => { e.preventDefault(); setShowForgot(true); }}>
                   Forgot password?
                 </a>
               </div>
@@ -208,6 +209,9 @@ export default function LoginPage({ onLogin, onRegister, onBack }) {
           </p>
         </div>
       </div>
+
+      {/* Forgot Password Modal */}
+      {showForgot && <ForgotPasswordModal onClose={() => setShowForgot(false)}/>}
     </div>
   );
 }
@@ -581,3 +585,119 @@ function EyeOffIcon() {
     </svg>
   );
 }
+
+// ─── Forgot Password Modal ───────────────────────────────────────────
+function ForgotPasswordModal({ onClose }) {
+  const [email, setEmail]   = useState("");
+  const [loading, setLoading] = useState(false);
+  const [done, setDone]     = useState(false);
+  const [error, setError]   = useState("");
+
+  const handleSubmit = async (e) => {
+    e?.preventDefault?.();
+    setError("");
+
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error: rsError } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: window.location.origin + "/?reset=1",
+      });
+      if (rsError) throw rsError;
+      setDone(true);
+    } catch (err) {
+      console.error("reset error:", err);
+      setError(err.message || "Could not send reset email. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div onClick={() => !loading && onClose()}
+      style={{
+        position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", zIndex:9000,
+        display:"flex", alignItems:"center", justifyContent:"center", padding:20,
+        fontFamily:"'Nunito',sans-serif",
+      }}>
+      <div onClick={(e)=>e.stopPropagation()}
+        style={{
+          background:"white", borderRadius:18, width:"100%", maxWidth:440,
+          boxShadow:"0 20px 60px rgba(0,0,0,0.3)", overflow:"hidden",
+        }}>
+        {/* Header */}
+        <div style={{ background:"linear-gradient(135deg,#075BB0,#0484CF)", color:"white", padding:"20px 24px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div>
+            <div style={{ fontSize:18, fontWeight:900 }}>🔐 Forgot Password?</div>
+            <div style={{ fontSize:11, opacity:0.9, marginTop:3 }}>We'll send you a reset link</div>
+          </div>
+          <button onClick={() => !loading && onClose()} disabled={loading}
+            style={{ background:"rgba(255,255,255,0.2)", color:"white", border:"none", width:32, height:32, borderRadius:"50%", fontSize:14, cursor:loading?"not-allowed":"pointer" }}>✕</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding:"22px 24px" }}>
+          {done ? (
+            <div style={{ textAlign:"center", padding:"10px 0" }}>
+              <div style={{ fontSize:48, marginBottom:10 }}>📬</div>
+              <div style={{ fontSize:16, fontWeight:900, color:"#075BB0", marginBottom:8 }}>Email Sent!</div>
+              <div style={{ fontSize:13, color:"#475569", lineHeight:1.7, marginBottom:18 }}>
+                We sent a password reset link to <strong>{email}</strong>.<br/>
+                Please check your inbox (and spam folder) for instructions.
+              </div>
+              <button onClick={onClose}
+                style={{ width:"100%", padding:12, background:"linear-gradient(135deg,#075BB0,#0484CF)", color:"white", border:"none", borderRadius:10, fontSize:13, fontWeight:900, cursor:"pointer", fontFamily:"inherit" }}>
+                Got it
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit}>
+              <div style={{ fontSize:13, color:"#475569", lineHeight:1.6, marginBottom:14 }}>
+                Enter the email associated with your account, and we'll send you a link to reset your password.
+              </div>
+
+              <label style={{ fontSize:11, fontWeight:800, color:"#64748b", textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:6, display:"block" }}>
+                Email Address
+              </label>
+              <input
+                type="email"
+                placeholder="you@email.com"
+                value={email}
+                onChange={(e)=>setEmail(e.target.value)}
+                autoFocus
+                style={{
+                  width:"100%", border:"1.5px solid #e2e8f0", borderRadius:10,
+                  padding:"11px 14px", fontSize:14, fontFamily:"inherit",
+                  boxSizing:"border-box", marginBottom:14, outline:"none",
+                }}
+              />
+
+              {error && (
+                <div style={{ background:"#fee2e2", color:"#991b1b", borderRadius:8, padding:"9px 12px", fontSize:12, marginBottom:14 }}>
+                  ⚠️ {error}
+                </div>
+              )}
+
+              <div style={{ display:"flex", gap:8 }}>
+                <button type="button" onClick={onClose} disabled={loading}
+                  style={{ flex:1, padding:11, background:"#f1f5f9", color:"#64748b", border:"none", borderRadius:10, fontSize:13, fontWeight:800, cursor:loading?"not-allowed":"pointer", fontFamily:"inherit" }}>
+                  Cancel
+                </button>
+                <button type="submit" disabled={loading}
+                  style={{ flex:2, padding:11, background:loading?"#94a3b8":"linear-gradient(135deg,#075BB0,#0484CF)", color:"white", border:"none", borderRadius:10, fontSize:13, fontWeight:900, cursor:loading?"not-allowed":"pointer", fontFamily:"inherit" }}>
+                  {loading ? "Sending..." : "Send Reset Link"}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+

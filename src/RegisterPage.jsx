@@ -56,15 +56,15 @@ const PACKAGES = [
 ];
 
 // ── Supabase: ตรวจสอบ username ว่าถูกใช้ไปแล้วหรือยัง ────────────────────────
-//   ใช้ RPC fn_username_taken (SECURITY DEFINER) แทน direct SELECT
-//   เพราะ unauthenticated user (ตอน register) จะถูก RLS block
-//   จาก SELECT ตรง → return [] → ระบบเข้าใจผิดว่า available
+//   ใช้ RPC fn_check_username_available (SECURITY DEFINER) แทน direct SELECT
+//   เพราะ unauthenticated user (ตอน register) จะถูก RLS block จาก SELECT ตรง
+//   Function checks profiles.username case-insensitive
 async function checkUsernameAvailability(usernameToCheck) {
   const { data, error } = await supabase
-    .rpc("fn_username_taken", { p_username: usernameToCheck.trim() });
+    .rpc("fn_check_username_available", { p_username: usernameToCheck.trim() });
 
   if (error) throw error;
-  return data === false; // false = ไม่ taken = available
+  return data === true; // true = available
 }
 
 // --- Sub-components ---
@@ -282,6 +282,31 @@ export default function RegisterPage({ onBack, onSubmitToStaff, defaultPackage }
   const handleSubmit = async () => {
     setLoading(true);
     try {
+      // ── Pre-check: Username must still be available ──
+      const isStillAvailable = await checkUsernameAvailability(username);
+      if (!isStillAvailable) {
+        setErrors({ general: "Sorry, this username was just taken by another user. Please pick a different one." });
+        setUsernameStatus("taken");
+        setLoading(false);
+        return;
+      }
+
+      // ── Reserve username (DB-level lock for 24h) ──────────────────────
+      // This blocks anyone else from reserving the same username while
+      // this user is verifying their email.
+      const { error: reserveError } = await supabase.rpc("fn_reserve_username", {
+        p_username: username.trim(),
+        p_email:    email.trim().toLowerCase(),
+      });
+      if (reserveError) {
+        console.error("Reserve error:", reserveError);
+        setErrors({ general: reserveError.message || "Could not reserve username. Please pick another." });
+        setUsernameStatus("taken");
+        setLoading(false);
+        return;
+      }
+      console.log("🔒 Username reserved:", username);
+
       // ── Save form data to localStorage BEFORE signUp ─────────────────────
       // (RPC will be called AFTER user verifies email, when session is active)
       const pendingData = {
@@ -321,6 +346,14 @@ export default function RegisterPage({ onBack, onSubmitToStaff, defaultPackage }
       });
 
       if (signUpError) {
+        // signUp failed — release the username reservation
+        try {
+          await supabase.rpc("fn_release_reservation", { p_email: email.trim().toLowerCase() });
+          console.log("🔓 Username reservation released after signUp error");
+        } catch (e) {
+          console.warn("Failed to release reservation:", e);
+        }
+
         // กรณี email ซ้ำ
         if (signUpError.message?.includes("already registered") ||
             signUpError.message?.includes("already been registered")) {
